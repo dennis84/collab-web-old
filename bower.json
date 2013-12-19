@@ -1,0 +1,9 @@
+{
+  "name": "collab",
+  "version": "0.1.0",
+  "dependencies": {
+    "jquery": "2.0.3",
+    "highlightjs": "7.5.0",
+    "less": "1.5.1"
+  }
+}
