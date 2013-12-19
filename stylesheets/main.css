@@ -1,0 +1,26 @@
+body {
+  margin: 0;
+  font-size: 20px;
+  background: #002b36;
+}
+
+pre, pre code {
+  font-family: 'CosmicSansNeueMono';
+}
+
+.powerline {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  background: #005970;
+  color: #fff;
+  padding: 2px 0;
+  margin: 0;
+}
+
+.cursor {
+  position: absolute;
+  width: 2px;
+  height: 22px;
+  background: #f6f31b;
+}
