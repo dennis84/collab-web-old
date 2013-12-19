@@ -1,37 +1,26 @@
-var room = location.hash.substr(1)
+var room       = location.hash.substr(1)
+  , lineHeight = 21
+  , $content   = $("#content")
+  , $cursor    = $("#cursor")
+  , $powerline = $("#powerline")
 
-var connection =
-  new WebSocket("wss://polar-woodland-4270.herokuapp.com/" + room)
+if(room.length > 2) {
+  var connection =
+    new WebSocket("ws://localhost:9000/" + room)
 
-connection.onopen = function() {
-  console.log("Connection: Open")
-}
+  connection.onmessage = function(e) {
+    var response = JSON.parse(e.data)
+      , node = document.createElement("code")
 
-connection.onmessage = function(e) {
-  var response = JSON.parse(e.data)
-    , node = document.createElement("code")
-    , content = response.content
-    , lines = content.split('\n')
+    node.appendChild(document.createTextNode(response.content))
+    hljs.highlightBlock(node, hljs.tabReplace)
 
-  if(lines.length > 0) {
-    var currentLine = lines[response.cursor_y - 1]
-    currentLine = [
-      currentLine.slice(0, response.cursor_x - 1),
-      "[collab-cursor]",
-      currentLine.slice(response.cursor_x - 1)
-    ].join("")
+    $content.html(node)
+    $powerline.html("⇒ " + response.name)
 
-    lines[response.cursor_y - 1] = currentLine
-    content = lines.join('\n')
+    $cursor.css({
+      "top":  (response.cursor_y - 1) * lineHeight + "px",
+      "left": (response.cursor_x - 1) + "ch"
+    })
   }
-
-  node.appendChild(document.createTextNode(content))
-
-  $("#content").html(node)
-  hljs.highlightBlock(node, hljs.tabReplace)
-
-  node.innerHTML = node.innerHTML.replace("[collab-cursor]",
-      "<span class='cursor'></span>")
-
-  $("#powerline").html("⇒ " + response.name)
 }

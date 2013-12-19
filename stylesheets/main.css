@@ -2,10 +2,13 @@ body {
   margin: 0;
   font-size: 20px;
   background: #002b36;
+  font-family: 'CosmicSansNeueMono';
 }
 
 pre, pre code {
   font-family: 'CosmicSansNeueMono';
+  margin: 0;
+  padding: 0;
 }
 
 .powerline {
@@ -20,7 +23,37 @@ pre, pre code {
 
 .cursor {
   position: absolute;
-  width: 2px;
+  width: 1ch;
   height: 22px;
-  background: #f6f31b;
+  background: #fff;
+  top: 0;
+  left: 0;
+  -webkit-animation: blink 0.8s linear 0s infinite;
+  -moz-animation: blink 0.8s linear 0s infinite;
+  -ms-animation: blink 0.8s linear 0s infinite;
+  -o-animation: blink 0.8s linear 0s infinite;
+}
+
+@keyframes blink {
+  0%   { opacity: 0 }
+  49%  { opacity: 0 }
+  50%  { opacity: 0.6 }
+  99%  { opacity: 0.6 }
+  100% { opacity: 0 }
+}
+
+@-webkit-keyframes blink {
+  0%   { opacity: 0 }
+  49%  { opacity: 0 }
+  50%  { opacity: 0.6 }
+  99%  { opacity: 0.6 }
+  100% { opacity: 0 }
+}
+ 
+@-moz-keyframes blink {
+  0%   { opacity: 0 }
+  49%  { opacity: 0 }
+  50%  { opacity: 0.6 }
+  99%  { opacity: 0.6 }
+  100% { opacity: 0 }
 }
