@@ -6,7 +6,7 @@ var room       = location.hash.substr(1)
 
 if(room.length > 2) {
   var connection =
-    new WebSocket("ws://localhost:9000/" + room)
+    new WebSocket("wss://polar-woodland-4270.herokuapp.com/" + room)
 
   connection.onmessage = function(e) {
     var response = JSON.parse(e.data)
