@@ -1,6 +1,7 @@
 var Backbone = require('backbone')
   , Connection = require('../models/connection')
   , templates = require('../templates')
+  , hljs = require('highlight.js')
 
 module.exports = Backbone.View.extend({
   id: 'code',

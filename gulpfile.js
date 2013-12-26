@@ -1,11 +1,16 @@
 var gulp = require('gulp')
   , concat = require('gulp-concat')
   , browserify = require('gulp-browserify')
-  , es = require('event-stream')
-  , path = require('path')
-  , util = require('gulp-util')
+  , less = require('gulp-less')
+  , templates = require('./gulp-templates.js')
 
-gulp.task('compile', function() {
+gulp.task('stylesheets', function() {
+  gulp.src('stylesheets/main.less')
+    .pipe(less({ compress: true }))
+    .pipe(gulp.dest('./stylesheets'))
+})
+
+gulp.task('javascripts', function() {
   gulp.run('templates')
   gulp.src('javascripts/application.js')
     .pipe(browserify())
@@ -14,44 +19,19 @@ gulp.task('compile', function() {
 })
 
 gulp.task('templates', function() {
-  var templates = gulp.src('templates/*.html')
-    .pipe(function() {
-      var templates = {}
-        , first = null
-
-      function bufferContents(file) {
-        if(null === first) {
-          first = file
-        }
-
-        templates[path.basename(file.path, '.html')] = String(file.contents)
-      }
-
-      function endStream() {
-        var output = 'module.exports = ' + JSON.stringify(templates)
-        var joinedFile = new util.File({
-          cwd:  first.cwd,
-          base: first.base,
-          path: first.path,
-          contents: new Buffer(output)
-        })
-
-        this.emit('data', joinedFile)
-        this.emit('end')
-      }
-
-      return es.through(bufferContents, endStream)
-    }())
-    .pipe(concat('templates.js'))
+  gulp.src('templates/*.html')
+    .pipe(templates('templates.js'))
     .pipe(gulp.dest('./javascripts'))
 })
 
 gulp.task('default', function() {
   gulp.watch([
     'javascripts/**',
-    'stylesheets/**',
+    '!javascripts/templates.js',
+    '!javascripts/application.pack.js',
+    'stylesheets/*.less',
     'templates/*.html'
   ], function(event) {
-    gulp.run('compile')
+    gulp.run(['stylesheets', 'javascripts'])
   })
 })

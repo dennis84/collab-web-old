@@ -1,0 +1,67 @@
+@import "colors.less";
+@import "fonts.less";
+@import "theme.less";
+
+body {
+  margin: 0;
+  font-size: 22px;
+  background: @base03;
+  font-family: 'CosmicSansNeueMono';
+  text-shadow: 0 1px darken(@base03, 20%);
+}
+
+pre, pre code {
+  font-family: 'CosmicSansNeueMono';
+  margin: 0;
+  padding: 0;
+}
+
+.powerline {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  background: lighten(@base03, 10%);
+  color: #fff;
+  padding: 2px 0;
+  margin: 0;
+  .online {
+    float: right;
+  }
+}
+
+.cursor {
+  position: absolute;
+  width: 1ch;
+  height: 22px;
+  background: #fff;
+  top: 0;
+  left: 0;
+  -webkit-animation: blink 0.8s linear 0s infinite;
+  -moz-animation: blink 0.8s linear 0s infinite;
+  -ms-animation: blink 0.8s linear 0s infinite;
+  -o-animation: blink 0.8s linear 0s infinite;
+}
+
+@keyframes blink {
+  0%   { opacity: 0 }
+  49%  { opacity: 0 }
+  50%  { opacity: 0.6 }
+  99%  { opacity: 0.6 }
+  100% { opacity: 0 }
+}
+
+@-webkit-keyframes blink {
+  0%   { opacity: 0 }
+  49%  { opacity: 0 }
+  50%  { opacity: 0.6 }
+  99%  { opacity: 0.6 }
+  100% { opacity: 0 }
+}
+ 
+@-moz-keyframes blink {
+  0%   { opacity: 0 }
+  49%  { opacity: 0 }
+  50%  { opacity: 0.6 }
+  99%  { opacity: 0.6 }
+  100% { opacity: 0 }
+}

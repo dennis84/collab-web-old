@@ -1,0 +1,92 @@
+@import "colors.less";
+
+pre {
+  code {
+    display: block;
+    padding: 0.5em;
+    background: @base03;
+    color: @base1;
+  }
+
+  .comment,
+  .template_comment,
+  .diff .header,
+  .doctype,
+  .pi,
+  .lisp .string,
+  .javadoc {
+    color: @base01;
+    font-style: italic;
+  }
+
+  .keyword,
+  .winutils,
+  .method,
+  .addition,
+  .css .tag,
+  .request,
+  .status,
+  .nginx .title {
+    color: @green;
+  }
+
+  .number,
+  .command,
+  .string,
+  .tag .value,
+  .rules .value,
+  .phpdoc,
+  .tex .formula,
+  .regexp,
+  .hexcolor {
+    color: @cyan;
+  }
+
+  .title,
+  .localvars,
+  .chunk,
+  .decorator,
+  .built_in,
+  .identifier,
+  .vhdl .literal,
+  .id,
+  .css .function {
+    color: @blue;
+  }
+
+  .attribute,
+  .variable,
+  .lisp .body,
+  .smalltalk .number,
+  .constant,
+  .class .title,
+  .parent,
+  .haskell .type {
+    color: @yellow;
+  }
+
+  .preprocessor,
+  .preprocessor .keyword,
+  .pragma,
+  .shebang,
+  .symbol,
+  .symbol .string,
+  .diff .change,
+  .special,
+  .attr_selector,
+  .important,
+  .subst,
+  .cdata,
+  .clojure .title,
+  .css .pseudo {
+    color: @orange;
+  }
+
+  .deletion {
+    color: @red;
+  }
+
+  .tex .formula {
+    background: @base02;
+  }
+}
