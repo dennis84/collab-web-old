@@ -9,7 +9,7 @@ var Backbone = require('backbone')
 Backbone.$ = jQuery
 
 window.connection = new Connection({
-  url: 'wss://iolar-woodland-4270.herokuapp.com'
+  url: 'wss://polar-woodland-4270.herokuapp.com'
 })
 
 var $content   = $('#content')
