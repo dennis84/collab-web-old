@@ -2,8 +2,8 @@ var Backbone = require('backbone')
 
 module.exports = Backbone.Model.extend({
 
-  connect: function() {
-    var connection = new WebSocket(this.get('url'))
+  connect: function(room) {
+    var connection = new WebSocket(this.get('url') + '/' + room)
       , model = this
 
     connection.onmessage = function(e) {

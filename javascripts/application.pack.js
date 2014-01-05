@@ -1,22 +1,35 @@
 ;(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 var Backbone = require('backbone')
+  , Connection = require('./models/connection')
   , Router = require('./router')
-  , Application = require('./views/application')
+  , Code = require('./views/code')
+  , Cursor = require('./views/cursor')
+  , Powerline = require('./views/powerline')
 
 Backbone.$ = jQuery
 
-window.app = new Application
+window.connection = new Connection({
+  url: 'wss://iolar-woodland-4270.herokuapp.com/' + options.room
+})
+
+var $content   = $('#content')
+  , $cursor    = $('#cursor')
+  , $powerline = $('#powerline')
+
+window.code = new Code({ el: $content })
+window.cursor = new Cursor({ el: $cursor })
+window.powerline = new Powerline({ el: $powerline })
 window.router = new Router
-window.app.render()
+
 Backbone.history.start()
 
-},{"./router":3,"./views/application":5,"backbone":8}],2:[function(require,module,exports){
+},{"./models/connection":2,"./router":3,"./views/code":4,"./views/cursor":5,"./views/powerline":6,"backbone":8}],2:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.Model.extend({
 
-  connect: function() {
-    var connection = new WebSocket(this.get('url'))
+  connect: function(room) {
+    var connection = new WebSocket(this.get('url') + '/' + room)
       , model = this
 
     connection.onmessage = function(e) {
@@ -28,8 +41,6 @@ module.exports = Backbone.Model.extend({
 
 },{"backbone":8}],3:[function(require,module,exports){
 var Backbone = require('backbone')
-  , Home = require('./views/home')
-  , Code = require('./views/code')
 
 module.exports = Backbone.Router.extend({
   routes: {
@@ -38,8 +49,6 @@ module.exports = Backbone.Router.extend({
   },
 
   home: function() {
-    var home = new Home
-    window.app.setView(home).render()
   },
 
   room: function(id) {
@@ -47,63 +56,22 @@ module.exports = Backbone.Router.extend({
       throw new Error('The room ID must have a min length of 3 chars')
     }
 
-    var code = new Code({ room: id })
-    window.app.setView(code).render()
+    window.connection.connect(id)
   }
 })
 
-},{"./views/code":6,"./views/home":7,"backbone":8}],4:[function(require,module,exports){
-module.exports = {"application":"<div id=\"container\"></div>\n","code":"<pre id=\"content\"></pre>\n\n<div id=\"powerline\" class=\"powerline\">\n  <span id=\"filename\" class=\"filename\"></span>\n  <span id=\"online\" class=\"online\"></span>\n</div>\n\n<div id=\"cursor\" class=\"cursor\"></div>\n","home":"<pre><code>\n   ________________ \n  < Collab - 0.1.0 >\n   ---------------- \n          \\   ^__^\n           \\  (oo)\\_______\n              (__)\\       )\\/\\\n                  ||----w |\n                  ||     ||\n</code></pre>\n"}
-},{}],5:[function(require,module,exports){
+},{"backbone":8}],4:[function(require,module,exports){
 var Backbone = require('backbone')
-  , templates = require('../templates')
-
-module.exports = Backbone.View.extend({
-  id: 'application',
-  view: null,
-
-  render: function() {
-    this.$el.html(templates.application)
-    $('body').html(this.el)
-  },
-
-  setView: function(view) {
-    if(this.view && this.view.close) {
-      this.view.close()
-    }
-
-    view.setElement(this.$('#container'))
-    this.view = view
-    return view
-  }
-})
-
-},{"../templates":4,"backbone":8}],6:[function(require,module,exports){
-var Backbone = require('backbone')
-  , Connection = require('../models/connection')
-  , templates = require('../templates')
   , hljs = require('highlight.js')
   , diff = require('diff')
 
 module.exports = Backbone.View.extend({
-  id: 'code',
   lineHeight: 23,
   code: '',
 
   initialize: function(options) {
-    var conn = new Connection({
-      url: 'wss://iolar-woodland-4270.herokuapp.com/' + options.room
-    })
-
-    conn.connect()
-    this.listenTo(conn, 'code', this.updateCode)
-    this.listenTo(conn, 'clean', this.cleanCode)
-    this.listenTo(conn, 'cursor', this.updateCursor)
-    this.listenTo(conn, 'online', this.updateNbMembers)
-  },
-
-  render: function() {
-    this.$el.html(templates.code)
+    this.listenTo(window.connection, 'code', this.updateCode)
+    this.listenTo(window.connection, 'clean', this.cleanCode)
   },
 
   cleanCode: function(data) {
@@ -127,35 +95,87 @@ module.exports = Backbone.View.extend({
     node.appendChild(document.createTextNode(content))
     hljs.highlightBlock(node, hljs.tabReplace)
 
-    this.$('#content').html(node)
-    this.$('#filename').html('⇒ ' + filename)
+    this.$el.html(node)
+  }
+})
+
+},{"backbone":8,"diff":9,"highlight.js":38}],5:[function(require,module,exports){
+var Backbone = require('backbone')
+
+module.exports = Backbone.View.extend({
+  lineHeight: 23,
+
+  initialize: function() {
+    this.listenTo(window.connection, 'cursor', this.update)
   },
 
-  updateCursor: function(data) {
-    this.$('#cursor').css({
+  update: function(data) {
+    this.$el.css({
       'top':  (data.cursor_y - 1) * this.lineHeight + 'px',
       'left': (data.cursor_x - 1) + 'ch'
     })
+  }
+})
+
+},{"backbone":8}],6:[function(require,module,exports){
+var Backbone = require('backbone')
+  , Television = require('./television')
+
+module.exports = Backbone.View.extend({
+  events: {
+    'click #tv': 'toggleTvMode'
+  },
+
+  initialize: function() {
+    this.television = new Television
+    this.listenTo(window.connection, 'code', this.update)
+    this.listenTo(window.connection, 'online', this.updateNbMembers)
+  },
+
+  update: function(data) {
+    this.$('#filename').html('⇒ ' + data.name)
   },
 
   updateNbMembers: function(data) {
     this.$('#online').html('Online (' + data + ')')
+  },
+
+  toggleTvMode: function(e) {
+    if(true === e.currentTarget.checked) {
+      this.television.start()
+    } else {
+      this.television.stop()
+    }
   }
 })
 
-},{"../models/connection":2,"../templates":4,"backbone":8,"diff":9,"highlight.js":38}],7:[function(require,module,exports){
+},{"./television":7,"backbone":8}],7:[function(require,module,exports){
 var Backbone = require('backbone')
-  , templates = require('../templates')
 
 module.exports = Backbone.View.extend({
-  id: 'home',
+  lineHeight: 23,
 
-  render: function() {
-    this.$el.html(templates.home)
+  initialize: function() {
+    this.body = $('body')
+    this.offset = $(window).height() * 0.3
+  },
+
+  start: function() {
+    this.listenTo(window.connection, 'cursor', this.scrollto)
+  },
+
+  stop: function() {
+    this.stopListening(window.connection)
+  },
+
+  scrollto: function(data) {
+    this.body.stop().animate({ scrollTop:
+      ((data.cursor_y - 1) * this.lineHeight) - this.offset + 'px'
+    })
   }
 })
 
-},{"../templates":4,"backbone":8}],8:[function(require,module,exports){
+},{"backbone":8}],8:[function(require,module,exports){
 //     Backbone.js 1.1.0
 
 //     (c) 2010-2011 Jeremy Ashkenas, DocumentCloud Inc.

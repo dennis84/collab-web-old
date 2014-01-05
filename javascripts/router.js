@@ -1,6 +1,4 @@
 var Backbone = require('backbone')
-  , Home = require('./views/home')
-  , Code = require('./views/code')
 
 module.exports = Backbone.Router.extend({
   routes: {
@@ -9,8 +7,6 @@ module.exports = Backbone.Router.extend({
   },
 
   home: function() {
-    var home = new Home
-    window.app.setView(home).render()
   },
 
   room: function(id) {
@@ -18,7 +14,6 @@ module.exports = Backbone.Router.extend({
       throw new Error('The room ID must have a min length of 3 chars')
     }
 
-    var code = new Code({ room: id })
-    window.app.setView(code).render()
+    window.connection.connect(id)
   }
 })
