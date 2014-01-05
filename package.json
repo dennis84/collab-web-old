@@ -9,6 +9,7 @@
     "gulp-util": "~2.2.0",
     "underscore": "~1.5.2",
     "backbone": "~1.1.0",
-    "gulp-less": "~1.0.2"
+    "gulp-less": "~1.0.2",
+    "diff": "~1.0.8"
   }
 }

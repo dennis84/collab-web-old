@@ -8,16 +8,7 @@ module.exports = Backbone.Model.extend({
 
     connection.onmessage = function(e) {
       var r = JSON.parse(e.data)
-        , t = r.t
-        , d = r.d
-
-      if('online' === t) {
-        model.trigger('online', d)
-      }
-
-      if('code' === t) {
-        model.trigger('code', d)
-      }
+      model.trigger(r.t, r.d)
     }
   }
 })
