@@ -9,8 +9,8 @@ module.exports = Backbone.View.extend({
 
   update: function(data) {
     this.$el.css({
-      'top':  (data.cursor_y - 1) * this.lineHeight + 'px',
-      'left': (data.cursor_x - 1) + 'ch'
+      'top':  (data.y - 1) * this.lineHeight + 'px',
+      'left': (data.x - 1) + 'ch'
     })
   }
 })

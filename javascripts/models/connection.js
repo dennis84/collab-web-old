@@ -1,12 +1,13 @@
 var Backbone = require('backbone')
 
 module.exports = Backbone.Model.extend({
+  socket: null,
 
   connect: function(room) {
-    var connection = new WebSocket(this.get('url') + '/' + room)
-      , model = this
+    var model = this
+    this.socket = new WebSocket(this.get('url') + '/' + room)
 
-    connection.onmessage = function(e) {
+    this.socket.onmessage = function(e) {
       var r = JSON.parse(e.data)
       model.trigger(r.t, r.d)
     }

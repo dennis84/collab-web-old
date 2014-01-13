@@ -18,7 +18,7 @@ module.exports = Backbone.View.extend({
 
   scrollto: function(data) {
     this.body.stop().animate({ scrollTop:
-      ((data.cursor_y - 1) * this.lineHeight) - this.offset + 'px'
+      ((data.y - 1) * this.lineHeight) - this.offset + 'px'
     })
   }
 })

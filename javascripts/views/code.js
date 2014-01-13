@@ -1,6 +1,5 @@
 var Backbone = require('backbone')
   , hljs = require('highlight.js')
-  , diff = require('diff')
 
 module.exports = Backbone.View.extend({
   lineHeight: 23,
@@ -19,10 +18,7 @@ module.exports = Backbone.View.extend({
   },
   
   updateCode: function(data) {
-    var patch = 'Index: foo\n\n' + data.content
-      , content = diff.applyPatch(this.code, patch)
-
-    this.renderCode(data.name, content)
+    this.renderCode(data.name, data.buffer)
   },
 
   renderCode: function(filename, content) {
