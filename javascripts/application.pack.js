@@ -1,4 +1,4 @@
-;(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+(function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 var Backbone = require('backbone')
   , Connection = require('./models/connection')
   , Router = require('./router')
@@ -67,36 +67,27 @@ var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
   lineHeight: 23,
-  code: '',
 
   initialize: function(options) {
     this.listenTo(window.connection, 'code', this.updateCode)
-    this.listenTo(window.connection, 'clean', this.cleanCode)
   },
 
-  cleanCode: function(data) {
-    var content = data.content
-      , node = document.createElement('code')
-
-    this.renderCode(data.name, content)
-  },
-  
   updateCode: function(data) {
-    this.renderCode(data.name, data.buffer)
-  },
+    var language = hljs.getLanguage(data.lang)
+      , $code = $('<code class="hljs ' + data.lang + '"></code>')
 
-  renderCode: function(filename, content) {
-    var node = document.createElement('code')
-    this.code = content
+    if(!language) {
+      var content = hljs.highlightAuto(data.buffer).value
+    } else {
+      var content = hljs.highlight(data.lang, data.buffer).value
+    }
 
-    node.appendChild(document.createTextNode(content))
-    hljs.highlightBlock(node, hljs.tabReplace)
-
-    this.$el.html(node)
+    $code.html(content)
+    this.$el.html($code)
   }
 })
 
-},{"backbone":8,"highlight.js":37}],5:[function(require,module,exports){
+},{"backbone":8,"highlight.js":10}],5:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
@@ -130,7 +121,7 @@ module.exports = Backbone.View.extend({
   },
 
   update: function(data) {
-    this.$('#filename').html('⇒ ' + data.name)
+    this.$('#filename').html('⇒ ' + data.path)
   },
 
   updateNbMembers: function(data) {
@@ -1755,7 +1746,761 @@ module.exports = Backbone.View.extend({
 
 }).call(this);
 
-},{"underscore":77}],9:[function(require,module,exports){
+},{"underscore":82}],9:[function(require,module,exports){
+var Highlight = function() {
+
+  /* Utility functions */
+
+  function escape(value) {
+    return value.replace(/&/gm, '&amp;').replace(/</gm, '&lt;').replace(/>/gm, '&gt;');
+  }
+
+  function tag(node) {
+    return node.nodeName.toLowerCase();
+  }
+
+  function testRe(re, lexeme) {
+    var match = re && re.exec(lexeme);
+    return match && match.index == 0;
+  }
+
+  function blockText(block) {
+    return Array.prototype.map.call(block.childNodes, function(node) {
+      if (node.nodeType == 3) {
+        return options.useBR ? node.nodeValue.replace(/\n/g, '') : node.nodeValue;
+      }
+      if (tag(node) == 'br') {
+        return '\n';
+      }
+      return blockText(node);
+    }).join('');
+  }
+
+  function blockLanguage(block) {
+    var classes = (block.className + ' ' + (block.parentNode ? block.parentNode.className : '')).split(/\s+/);
+    classes = classes.map(function(c) {return c.replace(/^language-/, '');});
+    return classes.filter(function(c) {return getLanguage(c) || c == 'no-highlight';})[0];
+  }
+
+  function inherit(parent, obj) {
+    var result = {};
+    for (var key in parent)
+      result[key] = parent[key];
+    if (obj)
+      for (var key in obj)
+        result[key] = obj[key];
+    return result;
+  };
+
+  /* Stream merging */
+
+  function nodeStream(node) {
+    var result = [];
+    (function _nodeStream(node, offset) {
+      for (var child = node.firstChild; child; child = child.nextSibling) {
+        if (child.nodeType == 3)
+          offset += child.nodeValue.length;
+        else if (tag(child) == 'br')
+          offset += 1;
+        else if (child.nodeType == 1) {
+          result.push({
+            event: 'start',
+            offset: offset,
+            node: child
+          });
+          offset = _nodeStream(child, offset);
+          result.push({
+            event: 'stop',
+            offset: offset,
+            node: child
+          });
+        }
+      }
+      return offset;
+    })(node, 0);
+    return result;
+  }
+
+  function mergeStreams(original, highlighted, value) {
+    var processed = 0;
+    var result = '';
+    var nodeStack = [];
+
+    function selectStream() {
+      if (!original.length || !highlighted.length) {
+        return original.length ? original : highlighted;
+      }
+      if (original[0].offset != highlighted[0].offset) {
+        return (original[0].offset < highlighted[0].offset) ? original : highlighted;
+      }
+
+      /*
+      To avoid starting the stream just before it should stop the order is
+      ensured that original always starts first and closes last:
+
+      if (event1 == 'start' && event2 == 'start')
+        return original;
+      if (event1 == 'start' && event2 == 'stop')
+        return highlighted;
+      if (event1 == 'stop' && event2 == 'start')
+        return original;
+      if (event1 == 'stop' && event2 == 'stop')
+        return highlighted;
+
+      ... which is collapsed to:
+      */
+      return highlighted[0].event == 'start' ? original : highlighted;
+    }
+
+    function open(node) {
+      function attr_str(a) {return ' ' + a.nodeName + '="' + escape(a.value) + '"';}
+      result += '<' + tag(node) + Array.prototype.map.call(node.attributes, attr_str).join('') + '>';
+    }
+
+    function close(node) {
+      result += '</' + tag(node) + '>';
+    }
+
+    function render(event) {
+      (event.event == 'start' ? open : close)(event.node);
+    }
+
+    while (original.length || highlighted.length) {
+      var stream = selectStream();
+      result += escape(value.substr(processed, stream[0].offset - processed));
+      processed = stream[0].offset;
+      if (stream == original) {
+        /*
+        On any opening or closing tag of the original markup we first close
+        the entire highlighted node stack, then render the original tag along
+        with all the following original tags at the same offset and then
+        reopen all the tags on the highlighted stack.
+        */
+        nodeStack.reverse().forEach(close);
+        do {
+          render(stream.splice(0, 1)[0]);
+          stream = selectStream();
+        } while (stream == original && stream.length && stream[0].offset == processed);
+        nodeStack.reverse().forEach(open);
+      } else {
+        if (stream[0].event == 'start') {
+          nodeStack.push(stream[0].node);
+        } else {
+          nodeStack.pop();
+        }
+        render(stream.splice(0, 1)[0]);
+      }
+    }
+    return result + escape(value.substr(processed));
+  }
+
+  /* Initialization */
+
+  function compileLanguage(language) {
+
+    function reStr(re) {
+        return (re && re.source) || re;
+    }
+
+    function langRe(value, global) {
+      return RegExp(
+        reStr(value),
+        'm' + (language.case_insensitive ? 'i' : '') + (global ? 'g' : '')
+      );
+    }
+
+    function compileMode(mode, parent) {
+      if (mode.compiled)
+        return;
+      mode.compiled = true;
+
+      mode.keywords = mode.keywords || mode.beginKeywords;
+      if (mode.keywords) {
+        var compiled_keywords = {};
+
+        function flatten(className, str) {
+          if (language.case_insensitive) {
+            str = str.toLowerCase();
+          }
+          str.split(' ').forEach(function(kw) {
+            var pair = kw.split('|');
+            compiled_keywords[pair[0]] = [className, pair[1] ? Number(pair[1]) : 1];
+          });
+        }
+
+        if (typeof mode.keywords == 'string') { // string
+          flatten('keyword', mode.keywords);
+        } else {
+          Object.keys(mode.keywords).forEach(function (className) {
+            flatten(className, mode.keywords[className]);
+          });
+        }
+        mode.keywords = compiled_keywords;
+      }
+      mode.lexemesRe = langRe(mode.lexemes || /\b[A-Za-z0-9_]+\b/, true);
+
+      if (parent) {
+        if (mode.beginKeywords) {
+          mode.begin = mode.beginKeywords.split(' ').join('|');
+        }
+        if (!mode.begin)
+          mode.begin = /\B|\b/;
+        mode.beginRe = langRe(mode.begin);
+        if (!mode.end && !mode.endsWithParent)
+          mode.end = /\B|\b/;
+        if (mode.end)
+          mode.endRe = langRe(mode.end);
+        mode.terminator_end = reStr(mode.end) || '';
+        if (mode.endsWithParent && parent.terminator_end)
+          mode.terminator_end += (mode.end ? '|' : '') + parent.terminator_end;
+      }
+      if (mode.illegal)
+        mode.illegalRe = langRe(mode.illegal);
+      if (mode.relevance === undefined)
+        mode.relevance = 1;
+      if (!mode.contains) {
+        mode.contains = [];
+      }
+      var expanded_contains = [];
+      mode.contains.forEach(function(c) {
+        if (c.variants) {
+          c.variants.forEach(function(v) {expanded_contains.push(inherit(c, v));});
+        } else {
+          expanded_contains.push(c == 'self' ? mode : c);
+        }
+      });
+      mode.contains = expanded_contains;
+      mode.contains.forEach(function(c) {compileMode(c, mode);});
+
+      if (mode.starts) {
+        compileMode(mode.starts, parent);
+      }
+
+      var terminators =
+        mode.contains.map(function(c) {
+          return c.beginKeywords ? '\\.?\\b(' + c.begin + ')\\b\\.?' : c.begin;
+        })
+        .concat([mode.terminator_end])
+        .concat([mode.illegal])
+        .map(reStr)
+        .filter(Boolean);
+      mode.terminators = terminators.length ? langRe(terminators.join('|'), true) : {exec: function(s) {return null;}};
+
+      mode.continuation = {};
+    }
+
+    compileMode(language);
+  }
+
+  /*
+  Core highlighting function. Accepts a language name, or an alias, and a
+  string with the code to highlight. Returns an object with the following
+  properties:
+
+  - relevance (int)
+  - value (an HTML string with highlighting markup)
+
+  */
+  function highlight(name, value, ignore_illegals, continuation) {
+
+    function subMode(lexeme, mode) {
+      for (var i = 0; i < mode.contains.length; i++) {
+        if (testRe(mode.contains[i].beginRe, lexeme)) {
+          return mode.contains[i];
+        }
+      }
+    }
+
+    function endOfMode(mode, lexeme) {
+      if (testRe(mode.endRe, lexeme)) {
+        return mode;
+      }
+      if (mode.endsWithParent) {
+        return endOfMode(mode.parent, lexeme);
+      }
+    }
+
+    function isIllegal(lexeme, mode) {
+      return !ignore_illegals && testRe(mode.illegalRe, lexeme);
+    }
+
+    function keywordMatch(mode, match) {
+      var match_str = language.case_insensitive ? match[0].toLowerCase() : match[0];
+      return mode.keywords.hasOwnProperty(match_str) && mode.keywords[match_str];
+    }
+
+    function buildSpan(classname, insideSpan, leaveOpen, noPrefix) {
+      var classPrefix = noPrefix ? '' : options.classPrefix,
+          openSpan    = '<span class="' + classPrefix,
+          closeSpan   = leaveOpen ? '' : '</span>';
+
+      openSpan += classname + '">';
+
+      return openSpan + insideSpan + closeSpan;
+    }
+
+    function processKeywords() {
+      var buffer = escape(mode_buffer);
+      if (!top.keywords)
+        return buffer;
+      var result = '';
+      var last_index = 0;
+      top.lexemesRe.lastIndex = 0;
+      var match = top.lexemesRe.exec(buffer);
+      while (match) {
+        result += buffer.substr(last_index, match.index - last_index);
+        var keyword_match = keywordMatch(top, match);
+        if (keyword_match) {
+          relevance += keyword_match[1];
+          result += buildSpan(keyword_match[0], match[0]);
+        } else {
+          result += match[0];
+        }
+        last_index = top.lexemesRe.lastIndex;
+        match = top.lexemesRe.exec(buffer);
+      }
+      return result + buffer.substr(last_index);
+    }
+
+    function processSubLanguage() {
+      if (top.subLanguage && !languages[top.subLanguage]) {
+        return escape(mode_buffer);
+      }
+      var result = top.subLanguage ? highlight(top.subLanguage, mode_buffer, true, top.continuation.top) : highlightAuto(mode_buffer);
+      // Counting embedded language score towards the host language may be disabled
+      // with zeroing the containing mode relevance. Usecase in point is Markdown that
+      // allows XML everywhere and makes every XML snippet to have a much larger Markdown
+      // score.
+      if (top.relevance > 0) {
+        relevance += result.relevance;
+      }
+      if (top.subLanguageMode == 'continuous') {
+        top.continuation.top = result.top;
+      }
+      return buildSpan(result.language, result.value, false, true);
+    }
+
+    function processBuffer() {
+      return top.subLanguage !== undefined ? processSubLanguage() : processKeywords();
+    }
+
+    function startNewMode(mode, lexeme) {
+      var markup = mode.className? buildSpan(mode.className, '', true): '';
+      if (mode.returnBegin) {
+        result += markup;
+        mode_buffer = '';
+      } else if (mode.excludeBegin) {
+        result += escape(lexeme) + markup;
+        mode_buffer = '';
+      } else {
+        result += markup;
+        mode_buffer = lexeme;
+      }
+      top = Object.create(mode, {parent: {value: top}});
+    }
+
+    function processLexeme(buffer, lexeme) {
+
+      mode_buffer += buffer;
+      if (lexeme === undefined) {
+        result += processBuffer();
+        return 0;
+      }
+
+      var new_mode = subMode(lexeme, top);
+      if (new_mode) {
+        result += processBuffer();
+        startNewMode(new_mode, lexeme);
+        return new_mode.returnBegin ? 0 : lexeme.length;
+      }
+
+      var end_mode = endOfMode(top, lexeme);
+      if (end_mode) {
+        var origin = top;
+        if (!(origin.returnEnd || origin.excludeEnd)) {
+          mode_buffer += lexeme;
+        }
+        result += processBuffer();
+        do {
+          if (top.className) {
+            result += '</span>';
+          }
+          relevance += top.relevance;
+          top = top.parent;
+        } while (top != end_mode.parent);
+        if (origin.excludeEnd) {
+          result += escape(lexeme);
+        }
+        mode_buffer = '';
+        if (end_mode.starts) {
+          startNewMode(end_mode.starts, '');
+        }
+        return origin.returnEnd ? 0 : lexeme.length;
+      }
+
+      if (isIllegal(lexeme, top))
+        throw new Error('Illegal lexeme "' + lexeme + '" for mode "' + (top.className || '<unnamed>') + '"');
+
+      /*
+      Parser should not reach this point as all types of lexemes should be caught
+      earlier, but if it does due to some bug make sure it advances at least one
+      character forward to prevent infinite looping.
+      */
+      mode_buffer += lexeme;
+      return lexeme.length || 1;
+    }
+
+    var language = getLanguage(name);
+    if (!language) {
+      throw new Error('Unknown language: "' + name + '"');
+    }
+
+    compileLanguage(language);
+    var top = continuation || language;
+    var result = '';
+    for(var current = top; current != language; current = current.parent) {
+      if (current.className) {
+        result = buildSpan(current.className, result, true);
+      }
+    }
+    var mode_buffer = '';
+    var relevance = 0;
+    try {
+      var match, count, index = 0;
+      while (true) {
+        top.terminators.lastIndex = index;
+        match = top.terminators.exec(value);
+        if (!match)
+          break;
+        count = processLexeme(value.substr(index, match.index - index), match[0]);
+        index = match.index + count;
+      }
+      processLexeme(value.substr(index));
+      for(var current = top; current.parent; current = current.parent) { // close dangling modes
+        if (current.className) {
+          result += '</span>';
+        }
+      };
+      return {
+        relevance: relevance,
+        value: result,
+        language: name,
+        top: top
+      };
+    } catch (e) {
+      if (e.message.indexOf('Illegal') != -1) {
+        return {
+          relevance: 0,
+          value: escape(value)
+        };
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  /*
+  Highlighting with language detection. Accepts a string with the code to
+  highlight. Returns an object with the following properties:
+
+  - language (detected language)
+  - relevance (int)
+  - value (an HTML string with highlighting markup)
+  - second_best (object with the same structure for second-best heuristically
+    detected language, may be absent)
+
+  */
+  function highlightAuto(text, languageSubset) {
+    languageSubset = languageSubset || options.languages || Object.keys(languages);
+    var result = {
+      relevance: 0,
+      value: escape(text)
+    };
+    var second_best = result;
+    languageSubset.forEach(function(name) {
+      if (!getLanguage(name)) {
+        return;
+      }
+      var current = highlight(name, text, false);
+      current.language = name;
+      if (current.relevance > second_best.relevance) {
+        second_best = current;
+      }
+      if (current.relevance > result.relevance) {
+        second_best = result;
+        result = current;
+      }
+    });
+    if (second_best.language) {
+      result.second_best = second_best;
+    }
+    return result;
+  }
+
+  /*
+  Post-processing of the highlighted markup:
+
+  - replace TABs with something more useful
+  - replace real line-breaks with '<br>' for non-pre containers
+
+  */
+  function fixMarkup(value) {
+    if (options.tabReplace) {
+      value = value.replace(/^((<[^>]+>|\t)+)/gm, function(match, p1, offset, s) {
+        return p1.replace(/\t/g, options.tabReplace);
+      });
+    }
+    if (options.useBR) {
+      value = value.replace(/\n/g, '<br>');
+    }
+    return value;
+  }
+
+  /*
+  Applies highlighting to a DOM node containing code. Accepts a DOM node and
+  two optional parameters for fixMarkup.
+  */
+  function highlightBlock(block) {
+    var text = blockText(block);
+    var language = blockLanguage(block);
+    if (language == 'no-highlight')
+        return;
+    var result = language ? highlight(language, text, true) : highlightAuto(text);
+    var original = nodeStream(block);
+    if (original.length) {
+      var pre = document.createElementNS('http://www.w3.org/1999/xhtml', 'pre');
+      pre.innerHTML = result.value;
+      result.value = mergeStreams(original, nodeStream(pre), text);
+    }
+    result.value = fixMarkup(result.value);
+
+    block.innerHTML = result.value;
+    block.className += ' hljs ' + (!language && result.language || '');
+    block.result = {
+      language: result.language,
+      re: result.relevance
+    };
+    if (result.second_best) {
+      block.second_best = {
+        language: result.second_best.language,
+        re: result.second_best.relevance
+      };
+    }
+  }
+
+  var options = {
+    classPrefix: 'hljs-',
+    tabReplace: null,
+    useBR: false,
+    languages: undefined
+  };
+
+  /*
+  Updates highlight.js global options with values passed in the form of an object
+  */
+  function configure(user_options) {
+    options = inherit(options, user_options);
+  }
+
+  /*
+  Applies highlighting to all <pre><code>..</code></pre> blocks on a page.
+  */
+  function initHighlighting() {
+    if (initHighlighting.called)
+      return;
+    initHighlighting.called = true;
+
+    var blocks = document.querySelectorAll('pre code');
+    Array.prototype.forEach.call(blocks, highlightBlock);
+  }
+
+  /*
+  Attaches highlighting to the page load event.
+  */
+  function initHighlightingOnLoad() {
+    addEventListener('DOMContentLoaded', initHighlighting, false);
+    addEventListener('load', initHighlighting, false);
+  }
+
+  var languages = {};
+  var aliases = {};
+
+  function registerLanguage(name, language) {
+    var lang = languages[name] = language(this);
+    if (lang.aliases) {
+      lang.aliases.forEach(function(alias) {aliases[alias] = name;});
+    }
+  }
+
+  function getLanguage(name) {
+    return languages[name] || languages[aliases[name]];
+  }
+
+  /* Interface definition */
+
+  this.highlight = highlight;
+  this.highlightAuto = highlightAuto;
+  this.fixMarkup = fixMarkup;
+  this.highlightBlock = highlightBlock;
+  this.configure = configure;
+  this.initHighlighting = initHighlighting;
+  this.initHighlightingOnLoad = initHighlightingOnLoad;
+  this.registerLanguage = registerLanguage;
+  this.getLanguage = getLanguage;
+  this.inherit = inherit;
+
+  // Common regexps
+  this.IDENT_RE = '[a-zA-Z][a-zA-Z0-9_]*';
+  this.UNDERSCORE_IDENT_RE = '[a-zA-Z_][a-zA-Z0-9_]*';
+  this.NUMBER_RE = '\\b\\d+(\\.\\d+)?';
+  this.C_NUMBER_RE = '(\\b0[xX][a-fA-F0-9]+|(\\b\\d+(\\.\\d*)?|\\.\\d+)([eE][-+]?\\d+)?)'; // 0x..., 0..., decimal, float
+  this.BINARY_NUMBER_RE = '\\b(0b[01]+)'; // 0b...
+  this.RE_STARTERS_RE = '!|!=|!==|%|%=|&|&&|&=|\\*|\\*=|\\+|\\+=|,|-|-=|/=|/|:|;|<<|<<=|<=|<|===|==|=|>>>=|>>=|>=|>>>|>>|>|\\?|\\[|\\{|\\(|\\^|\\^=|\\||\\|=|\\|\\||~';
+
+  // Common modes
+  this.BACKSLASH_ESCAPE = {
+    begin: '\\\\[\\s\\S]', relevance: 0
+  };
+  this.APOS_STRING_MODE = {
+    className: 'string',
+    begin: '\'', end: '\'',
+    illegal: '\\n',
+    contains: [this.BACKSLASH_ESCAPE]
+  };
+  this.QUOTE_STRING_MODE = {
+    className: 'string',
+    begin: '"', end: '"',
+    illegal: '\\n',
+    contains: [this.BACKSLASH_ESCAPE]
+  };
+  this.C_LINE_COMMENT_MODE = {
+    className: 'comment',
+    begin: '//', end: '$'
+  };
+  this.C_BLOCK_COMMENT_MODE = {
+    className: 'comment',
+    begin: '/\\*', end: '\\*/'
+  };
+  this.HASH_COMMENT_MODE = {
+    className: 'comment',
+    begin: '#', end: '$'
+  };
+  this.NUMBER_MODE = {
+    className: 'number',
+    begin: this.NUMBER_RE,
+    relevance: 0
+  };
+  this.C_NUMBER_MODE = {
+    className: 'number',
+    begin: this.C_NUMBER_RE,
+    relevance: 0
+  };
+  this.BINARY_NUMBER_MODE = {
+    className: 'number',
+    begin: this.BINARY_NUMBER_RE,
+    relevance: 0
+  };
+  this.REGEXP_MODE = {
+    className: 'regexp',
+    begin: /\//, end: /\/[gim]*/,
+    illegal: /\n/,
+    contains: [
+      this.BACKSLASH_ESCAPE,
+      {
+        begin: /\[/, end: /\]/,
+        relevance: 0,
+        contains: [this.BACKSLASH_ESCAPE]
+      }
+    ]
+  };
+  this.TITLE_MODE = {
+    className: 'title',
+    begin: this.IDENT_RE,
+    relevance: 0
+  };
+  this.UNDERSCORE_TITLE_MODE = {
+    className: 'title',
+    begin: this.UNDERSCORE_IDENT_RE,
+    relevance: 0
+  };
+};
+module.exports = Highlight;
+},{}],10:[function(require,module,exports){
+var Highlight = require('./highlight');
+var hljs = new Highlight();
+hljs.registerLanguage('bash', require('./languages/bash.js'));
+hljs.registerLanguage('fix', require('./languages/fix.js'));
+hljs.registerLanguage('erlang', require('./languages/erlang.js'));
+hljs.registerLanguage('cs', require('./languages/cs.js'));
+hljs.registerLanguage('brainfuck', require('./languages/brainfuck.js'));
+hljs.registerLanguage('ruby', require('./languages/ruby.js'));
+hljs.registerLanguage('rust', require('./languages/rust.js'));
+hljs.registerLanguage('ruleslanguage', require('./languages/ruleslanguage.js'));
+hljs.registerLanguage('rib', require('./languages/rib.js'));
+hljs.registerLanguage('diff', require('./languages/diff.js'));
+hljs.registerLanguage('haml', require('./languages/haml.js'));
+hljs.registerLanguage('javascript', require('./languages/javascript.js'));
+hljs.registerLanguage('glsl', require('./languages/glsl.js'));
+hljs.registerLanguage('rsl', require('./languages/rsl.js'));
+hljs.registerLanguage('lua', require('./languages/lua.js'));
+hljs.registerLanguage('xml', require('./languages/xml.js'));
+hljs.registerLanguage('markdown', require('./languages/markdown.js'));
+hljs.registerLanguage('css', require('./languages/css.js'));
+hljs.registerLanguage('lisp', require('./languages/lisp.js'));
+hljs.registerLanguage('profile', require('./languages/profile.js'));
+hljs.registerLanguage('http', require('./languages/http.js'));
+hljs.registerLanguage('java', require('./languages/java.js'));
+hljs.registerLanguage('fsharp', require('./languages/fsharp.js'));
+hljs.registerLanguage('mathematica', require('./languages/mathematica.js'));
+hljs.registerLanguage('php', require('./languages/php.js'));
+hljs.registerLanguage('haskell', require('./languages/haskell.js'));
+hljs.registerLanguage('1c', require('./languages/1c.js'));
+hljs.registerLanguage('python', require('./languages/python.js'));
+hljs.registerLanguage('smalltalk', require('./languages/smalltalk.js'));
+hljs.registerLanguage('tex', require('./languages/tex.js'));
+hljs.registerLanguage('actionscript', require('./languages/actionscript.js'));
+hljs.registerLanguage('sql', require('./languages/sql.js'));
+hljs.registerLanguage('handlebars', require('./languages/handlebars.js'));
+hljs.registerLanguage('vala', require('./languages/vala.js'));
+hljs.registerLanguage('ini', require('./languages/ini.js'));
+hljs.registerLanguage('livecodeserver', require('./languages/livecodeserver.js'));
+hljs.registerLanguage('d', require('./languages/d.js'));
+hljs.registerLanguage('vbnet', require('./languages/vbnet.js'));
+hljs.registerLanguage('axapta', require('./languages/axapta.js'));
+hljs.registerLanguage('perl', require('./languages/perl.js'));
+hljs.registerLanguage('scala', require('./languages/scala.js'));
+hljs.registerLanguage('cmake', require('./languages/cmake.js'));
+hljs.registerLanguage('ocaml', require('./languages/ocaml.js'));
+hljs.registerLanguage('autohotkey', require('./languages/autohotkey.js'));
+hljs.registerLanguage('objectivec', require('./languages/objectivec.js'));
+hljs.registerLanguage('avrasm', require('./languages/avrasm.js'));
+hljs.registerLanguage('vhdl', require('./languages/vhdl.js'));
+hljs.registerLanguage('coffeescript', require('./languages/coffeescript.js'));
+hljs.registerLanguage('mizar', require('./languages/mizar.js'));
+hljs.registerLanguage('nginx', require('./languages/nginx.js'));
+hljs.registerLanguage('erlang-repl', require('./languages/erlang-repl.js'));
+hljs.registerLanguage('r', require('./languages/r.js'));
+hljs.registerLanguage('json', require('./languages/json.js'));
+hljs.registerLanguage('django', require('./languages/django.js'));
+hljs.registerLanguage('delphi', require('./languages/delphi.js'));
+hljs.registerLanguage('vbscript', require('./languages/vbscript.js'));
+hljs.registerLanguage('oxygene', require('./languages/oxygene.js'));
+hljs.registerLanguage('mel', require('./languages/mel.js'));
+hljs.registerLanguage('dos', require('./languages/dos.js'));
+hljs.registerLanguage('apache', require('./languages/apache.js'));
+hljs.registerLanguage('scss', require('./languages/scss.js'));
+hljs.registerLanguage('applescript', require('./languages/applescript.js'));
+hljs.registerLanguage('lasso', require('./languages/lasso.js'));
+hljs.registerLanguage('cpp', require('./languages/cpp.js'));
+hljs.registerLanguage('matlab', require('./languages/matlab.js'));
+hljs.registerLanguage('scilab', require('./languages/scilab.js'));
+hljs.registerLanguage('makefile', require('./languages/makefile.js'));
+hljs.registerLanguage('asciidoc', require('./languages/asciidoc.js'));
+hljs.registerLanguage('parser3', require('./languages/parser3.js'));
+hljs.registerLanguage('clojure', require('./languages/clojure.js'));
+hljs.registerLanguage('go', require('./languages/go.js'));
+module.exports = hljs;
+},{"./highlight":9,"./languages/1c.js":11,"./languages/actionscript.js":12,"./languages/apache.js":13,"./languages/applescript.js":14,"./languages/asciidoc.js":15,"./languages/autohotkey.js":16,"./languages/avrasm.js":17,"./languages/axapta.js":18,"./languages/bash.js":19,"./languages/brainfuck.js":20,"./languages/clojure.js":21,"./languages/cmake.js":22,"./languages/coffeescript.js":23,"./languages/cpp.js":24,"./languages/cs.js":25,"./languages/css.js":26,"./languages/d.js":27,"./languages/delphi.js":28,"./languages/diff.js":29,"./languages/django.js":30,"./languages/dos.js":31,"./languages/erlang-repl.js":32,"./languages/erlang.js":33,"./languages/fix.js":34,"./languages/fsharp.js":35,"./languages/glsl.js":36,"./languages/go.js":37,"./languages/haml.js":38,"./languages/handlebars.js":39,"./languages/haskell.js":40,"./languages/http.js":41,"./languages/ini.js":42,"./languages/java.js":43,"./languages/javascript.js":44,"./languages/json.js":45,"./languages/lasso.js":46,"./languages/lisp.js":47,"./languages/livecodeserver.js":48,"./languages/lua.js":49,"./languages/makefile.js":50,"./languages/markdown.js":51,"./languages/mathematica.js":52,"./languages/matlab.js":53,"./languages/mel.js":54,"./languages/mizar.js":55,"./languages/nginx.js":56,"./languages/objectivec.js":57,"./languages/ocaml.js":58,"./languages/oxygene.js":59,"./languages/parser3.js":60,"./languages/perl.js":61,"./languages/php.js":62,"./languages/profile.js":63,"./languages/python.js":64,"./languages/r.js":65,"./languages/rib.js":66,"./languages/rsl.js":67,"./languages/ruby.js":68,"./languages/ruleslanguage.js":69,"./languages/rust.js":70,"./languages/scala.js":71,"./languages/scilab.js":72,"./languages/scss.js":73,"./languages/smalltalk.js":74,"./languages/sql.js":75,"./languages/tex.js":76,"./languages/vala.js":77,"./languages/vbnet.js":78,"./languages/vbscript.js":79,"./languages/vhdl.js":80,"./languages/xml.js":81}],11:[function(require,module,exports){
 module.exports = function(hljs){
   var IDENT_RE_RU = '[a-zA-Zа-яА-Я][a-zA-Z0-9_а-яА-Я]*';
   var OneS_KEYWORDS = 'возврат дата для если и или иначе иначеесли исключение конецесли ' +
@@ -1790,8 +2535,7 @@ module.exports = function(hljs){
   var STR_START = {
       className: 'string',
       begin: '"', end: '"|$',
-      contains: [DQUOTE],
-      relevance: 0
+      contains: [DQUOTE]
     };
   var STR_CONT = {
     className: 'string',
@@ -1801,7 +2545,7 @@ module.exports = function(hljs){
 
   return {
     case_insensitive: true,
-    lexems: IDENT_RE_RU,
+    lexemes: IDENT_RE_RU,
     keywords: {keyword: OneS_KEYWORDS, built_in: OneS_BUILT_IN},
     contains: [
       hljs.C_LINE_COMMENT_MODE,
@@ -1810,10 +2554,10 @@ module.exports = function(hljs){
       {
         className: 'function',
         begin: '(процедура|функция)', end: '$',
-        lexems: IDENT_RE_RU,
+        lexemes: IDENT_RE_RU,
         keywords: 'процедура функция',
         contains: [
-          {className: 'title', begin: IDENT_RE_RU},
+          hljs.inherit(hljs.TITLE_MODE, {begin: IDENT_RE_RU}),
           {
             className: 'tail',
             endsWithParent: true,
@@ -1821,14 +2565,14 @@ module.exports = function(hljs){
               {
                 className: 'params',
                 begin: '\\(', end: '\\)',
-                lexems: IDENT_RE_RU,
+                lexemes: IDENT_RE_RU,
                 keywords: 'знач',
                 contains: [STR_START, STR_CONT]
               },
               {
                 className: 'export',
                 begin: 'экспорт', endsWithParent: true,
-                lexems: IDENT_RE_RU,
+                lexemes: IDENT_RE_RU,
                 keywords: 'экспорт',
                 contains: [hljs.C_LINE_COMMENT_MODE]
               }
@@ -1842,7 +2586,7 @@ module.exports = function(hljs){
     ]
   };
 };
-},{}],10:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 module.exports = function(hljs) {
   var IDENT_RE = '[a-zA-Z_$][a-zA-Z0-9_$]*';
   var IDENT_FUNC_RETURN_TYPE_RE = '([*]|[a-zA-Z_$][a-zA-Z0-9_$]*)';
@@ -1852,7 +2596,6 @@ module.exports = function(hljs) {
     begin: '[.]{3}', end: IDENT_RE,
     relevance: 10
   };
-  var TITLE_MODE = {className: 'title', begin: IDENT_RE};
 
   return {
     keywords: {
@@ -1871,34 +2614,29 @@ module.exports = function(hljs) {
       hljs.C_NUMBER_MODE,
       {
         className: 'package',
-        beginWithKeyword: true, end: '{',
-        keywords: 'package',
-        contains: [TITLE_MODE]
+        beginKeywords: 'package', end: '{',
+        contains: [hljs.TITLE_MODE]
       },
       {
         className: 'class',
-        beginWithKeyword: true, end: '{',
-        keywords: 'class interface',
+        beginKeywords: 'class interface', end: '{',
         contains: [
           {
-            beginWithKeyword: true,
-            keywords: 'extends implements'
+            beginKeywords: 'extends implements'
           },
-          TITLE_MODE
+          hljs.TITLE_MODE
         ]
       },
       {
         className: 'preprocessor',
-        beginWithKeyword: true, end: ';',
-        keywords: 'import include'
+        beginKeywords: 'import include', end: ';'
       },
       {
         className: 'function',
-        beginWithKeyword: true, end: '[{;]',
-        keywords: 'function',
+        beginKeywords: 'function', end: '[{;]',
         illegal: '\\S',
         contains: [
-          TITLE_MODE,
+          hljs.TITLE_MODE,
           {
             className: 'params',
             begin: '\\(', end: '\\)',
@@ -1921,7 +2659,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],11:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 module.exports = function(hljs) {
   var NUMBER = {className: 'number', begin: '[\\$%]\\d+'};
   return {
@@ -1966,12 +2704,9 @@ module.exports = function(hljs) {
     illegal: /\S/
   };
 };
-},{}],12:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 module.exports = function(hljs) {
   var STRING = hljs.inherit(hljs.QUOTE_STRING_MODE, {illegal: ''});
-  var TITLE = {
-    className: 'title', begin: hljs.UNDERSCORE_IDENT_RE
-  };
   var PARAMS = {
     className: 'params',
     begin: '\\(', end: '\\)',
@@ -2056,16 +2791,15 @@ module.exports = function(hljs) {
       },
       {
         className: 'function_start',
-        beginWithKeyword: true,
-        keywords: 'on',
+        beginKeywords: 'on',
         illegal: '[${=;\\n]',
-        contains: [TITLE, PARAMS]
+        contains: [hljs.UNDERSCORE_TITLE_MODE, PARAMS]
       }
     ].concat(COMMENTS),
     illegal: '//'
   };
 };
-},{}],13:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
@@ -2258,7 +2992,67 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],14:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
+module.exports = function(hljs) {
+  var BACKTICK_ESCAPE = {
+    className: 'escape',
+    begin: '`[\\s\\S]'
+  };
+  var COMMENTS = {
+    className: 'comment',
+    begin: ';', end: '$',
+    relevance: 0
+  };
+  var BUILT_IN = [
+    {
+      className: 'built_in',
+      begin: 'A_[a-zA-Z0-9]+'
+    },
+    {
+      className: 'built_in',
+      beginKeywords: 'ComSpec Clipboard ClipboardAll ErrorLevel'
+    }
+  ];
+
+  return {
+    case_insensitive: true,
+    keywords: {
+      keyword: 'Break Continue Else Gosub If Loop Return While',
+      literal: 'A true false NOT AND OR'
+    },
+    contains: BUILT_IN.concat([
+      BACKTICK_ESCAPE,
+      hljs.inherit(hljs.QUOTE_STRING_MODE, {contains: [BACKTICK_ESCAPE]}),
+      COMMENTS,
+      {
+        className: 'number',
+        begin: hljs.NUMBER_RE,
+        relevance: 0
+      },
+      {
+        className: 'var_expand', // FIXME
+        begin: '%', end: '%',
+        illegal: '\\n',
+        contains: [BACKTICK_ESCAPE]
+      },
+      {
+        className: 'label',
+        contains: [BACKTICK_ESCAPE],
+        variants: [
+          {begin: '^[^\\n";]+::(?!=)'},
+          {begin: '^[^\\n";]+:(?!=)', relevance: 0} // zero relevance as it catches a lot of things
+                                                    // followed by a single ':' in many languages
+        ]
+      },
+      {
+        // consecutive commas, not for highlighting but just for relevance
+        begin: ',\\s*,',
+        relevance: 10
+      }
+    ])
+  }
+};
+},{}],17:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -2288,7 +3082,7 @@ module.exports = function(hljs) {
     },
     contains: [
       hljs.C_BLOCK_COMMENT_MODE,
-      {className: 'comment', begin: ';',  end: '$'},
+      {className: 'comment', begin: ';',  end: '$', relevance: 0},
       hljs.C_NUMBER_MODE, // 0x..., decimal, float
       hljs.BINARY_NUMBER_MODE, // 0b...
       {
@@ -2314,7 +3108,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],15:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: 'false int abstract private char boolean static null if for true ' +
@@ -2335,56 +3129,49 @@ module.exports = function(hljs) {
       },
       {
         className: 'class',
-        beginWithKeyword: true, end: '{',
+        beginKeywords: 'class interface', end: '{',
         illegal: ':',
-        keywords: 'class interface',
         contains: [
           {
             className: 'inheritance',
-            beginWithKeyword: true,
-            keywords: 'extends implements',
+            beginKeywords: 'extends implements',
             relevance: 10
           },
-          {
-            className: 'title',
-            begin: hljs.UNDERSCORE_IDENT_RE
-          }
+          hljs.UNDERSCORE_TITLE_MODE
         ]
       }
     ]
   };
 };
-},{}],16:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 module.exports = function(hljs) {
-  var VAR1 = {
-    className: 'variable', begin: /\$[\w\d#@][\w\d_]*/
-  };
-  var VAR2 = {
-    className: 'variable', begin: /\$\{(.*?)\}/
+  var VAR = {
+    className: 'variable',
+    variants: [
+      {begin: /\$[\w\d#@][\w\d_]*/},
+      {begin: /\$\{(.*?)\}/}
+    ]
   };
   var QUOTE_STRING = {
     className: 'string',
     begin: /"/, end: /"/,
     contains: [
       hljs.BACKSLASH_ESCAPE,
-      VAR1,
-      VAR2,
+      VAR,
       {
         className: 'variable',
         begin: /\$\(/, end: /\)/,
-        contains: hljs.BACKSLASH_ESCAPE
+        contains: [hljs.BACKSLASH_ESCAPE]
       }
-    ],
-    relevance: 0
+    ]
   };
   var APOS_STRING = {
     className: 'string',
-    begin: /'/, end: /'/,
-    relevance: 0
+    begin: /'/, end: /'/
   };
 
   return {
-    lexems: /-?[a-z]+/,
+    lexemes: /-?[a-z\.]+/,
     keywords: {
       keyword:
         'if then else elif fi for break continue while in do done exit return set '+
@@ -2407,20 +3194,24 @@ module.exports = function(hljs) {
         className: 'function',
         begin: /\w[\w\d_]*\s*\(\s*\)\s*\{/,
         returnBegin: true,
-        contains: [{className: 'title', begin: /\w[\w\d_]*/}],
+        contains: [hljs.inherit(hljs.TITLE_MODE, {begin: /\w[\w\d_]*/})],
         relevance: 0
       },
       hljs.HASH_COMMENT_MODE,
       hljs.NUMBER_MODE,
       QUOTE_STRING,
       APOS_STRING,
-      VAR1,
-      VAR2
+      VAR
     ]
   };
 };
-},{}],17:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 module.exports = function(hljs){
+  var LITERAL = {
+    className: 'literal',
+    begin: '[\\+\\-]',
+    relevance: 0
+  };
   return {
     contains: [
       {
@@ -2441,13 +3232,15 @@ module.exports = function(hljs){
         relevance: 0
       },
       {
-        className: 'literal',
-        begin: '[\\+\\-]'
-      }
+        // this mode works as the only relevance counter
+        begin: /\+\+|\-\-/, returnBegin: true,
+        contains: [LITERAL]
+      },
+      LITERAL
     ]
   };
 };
-},{}],18:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 module.exports = function(hljs) {
   var keywords = {
     built_in:
@@ -2463,17 +3256,17 @@ module.exports = function(hljs) {
       'nthrest partition eval doseq await await-for let agent atom send send-off release-pending-sends '+
       'add-watch mapv filterv remove-watch agent-error restart-agent set-error-handler error-handler '+
       'set-error-mode! error-mode shutdown-agents quote var fn loop recur throw try monitor-enter '+
-      'monitor-exit defmacro defn defn- macroexpand macroexpand-1 for doseq dosync dotimes and or '+
+      'monitor-exit defmacro defn defn- macroexpand macroexpand-1 for dosync and or '+
       'when when-not when-let comp juxt partial sequence memoize constantly complement identity assert '+
       'peek pop doto proxy defstruct first rest cons defprotocol cast coll deftype defrecord last butlast '+
       'sigs reify second ffirst fnext nfirst nnext defmulti defmethod meta with-meta ns in-ns create-ns import '+
-      'intern refer keys select-keys vals key val rseq name namespace promise into transient persistent! conj! '+
-      'assoc! dissoc! pop! disj! import use class type num float double short byte boolean bigint biginteger '+
-      'bigdec print-method print-dup throw-if throw printf format load compile get-in update-in pr pr-on newline '+
-      'flush read slurp read-line subvec with-open memfn time ns assert re-find re-groups rand-int rand mod locking '+
-      'assert-valid-fdecl alias namespace resolve ref deref refset swap! reset! set-validator! compare-and-set! alter-meta! '+
+      'refer keys select-keys vals key val rseq name namespace promise into transient persistent! conj! '+
+      'assoc! dissoc! pop! disj! use class type num float double short byte boolean bigint biginteger '+
+      'bigdec print-method print-dup throw-if printf format load compile get-in update-in pr pr-on newline '+
+      'flush read slurp read-line subvec with-open memfn time re-find re-groups rand-int rand mod locking '+
+      'assert-valid-fdecl alias resolve ref deref refset swap! reset! set-validator! compare-and-set! alter-meta! '+
       'reset-meta! commute get-validator alter ref-set ref-history-count ref-min-history ref-max-history ensure sync io! '+
-      'new next conj set! memfn to-array future future-call into-array aset gen-class reduce merge map filter find empty '+
+      'new next conj set! to-array future future-call into-array aset gen-class reduce map filter find empty '+
       'hash-map hash-set sorted-map sorted-map-by sorted-set sorted-set-by vec vector seq flatten reverse assoc dissoc list '+
       'disj get union difference intersection extend extend-type extend-protocol int nth delay count concat chunk chunk-buffer '+
       'chunk-append chunk-first chunk-rest max min dec unchecked-inc-int unchecked-inc unchecked-dec-inc unchecked-dec unchecked-negate '+
@@ -2488,12 +3281,7 @@ module.exports = function(hljs) {
     className: 'number', begin: SIMPLE_NUMBER_RE,
     relevance: 0
   };
-  var STRING = {
-    className: 'string',
-    begin: '"', end: '"',
-    contains: [hljs.BACKSLASH_ESCAPE],
-    relevance: 0
-  };
+  var STRING = hljs.inherit(hljs.QUOTE_STRING_MODE, {illegal: null});
   var COMMENT = {
     className: 'comment',
     begin: ';', end: '$',
@@ -2510,6 +3298,7 @@ module.exports = function(hljs) {
   var HINT_COL = {
     className: 'comment',
     begin: '\\^\\{', end: '\\}'
+
   };
   var KEY = {
     className: 'attribute',
@@ -2526,7 +3315,7 @@ module.exports = function(hljs) {
   };
   var TITLE = {
     keywords: keywords,
-    lexems: CLJ_IDENT_RE,
+    lexemes: CLJ_IDENT_RE,
     className: 'title', begin: CLJ_IDENT_RE,
     starts: BODY
   };
@@ -2539,11 +3328,16 @@ module.exports = function(hljs) {
     illegal: /\S/,
     contains: [
       COMMENT,
-      LIST
+      LIST,
+      {
+        className: 'prompt',
+        begin: /^=> /,
+        starts: {end: /\n\n|\Z/} // eat up prompt output to not interfere with the illegal
+      }
     ]
   }
 };
-},{}],19:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -2581,7 +3375,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],20:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 module.exports = function(hljs) {
   var KEYWORDS = {
     keyword:
@@ -2602,54 +3396,52 @@ module.exports = function(hljs) {
       'npm require console print module exports global window document'
   };
   var JS_IDENT_RE = '[A-Za-z$_][0-9A-Za-z$_]*';
-  var TITLE = {className: 'title', begin: JS_IDENT_RE};
+  var TITLE = hljs.inherit(hljs.TITLE_MODE, {begin: JS_IDENT_RE});
   var SUBST = {
     className: 'subst',
-    begin: '#\\{', end: '}',
-    keywords: KEYWORDS,
+    begin: /#\{/, end: /}/,
+    keywords: KEYWORDS
   };
   var EXPRESSIONS = [
-    // Numbers
     hljs.BINARY_NUMBER_MODE,
     hljs.inherit(hljs.C_NUMBER_MODE, {starts: {end: '(\\s*/)?', relevance: 0}}), // a number tries to eat the following slash to prevent treating it as a regexp
-    // Strings
     {
       className: 'string',
-      begin: '\'\'\'', end: '\'\'\'',
-      contains: [hljs.BACKSLASH_ESCAPE]
-    },
-    {
-      className: 'string',
-      begin: '\'', end: '\'',
-      contains: [hljs.BACKSLASH_ESCAPE],
-      relevance: 0
-    },
-    {
-      className: 'string',
-      begin: '"""', end: '"""',
-      contains: [hljs.BACKSLASH_ESCAPE, SUBST]
-    },
-    {
-      className: 'string',
-      begin: '"', end: '"',
-      contains: [hljs.BACKSLASH_ESCAPE, SUBST],
-      relevance: 0
-    },
-    // RegExps
-    {
-      className: 'regexp',
-      begin: '///', end: '///',
-      contains: [hljs.HASH_COMMENT_MODE]
-    },
-    {
-      className: 'regexp', begin: '//[gim]*',
-      relevance: 0
+      variants: [
+        {
+          begin: /'''/, end: /'''/,
+          contains: [hljs.BACKSLASH_ESCAPE]
+        },
+        {
+          begin: /'/, end: /'/,
+          contains: [hljs.BACKSLASH_ESCAPE]
+        },
+        {
+          begin: /"""/, end: /"""/,
+          contains: [hljs.BACKSLASH_ESCAPE, SUBST]
+        },
+        {
+          begin: /"/, end: /"/,
+          contains: [hljs.BACKSLASH_ESCAPE, SUBST]
+        }
+      ]
     },
     {
       className: 'regexp',
-      begin: '/\\S(\\\\.|[^\\n])*?/[gim]*(?=\\s|\\W|$)' // \S is required to parse x / 2 / 3 as two divisions
+      variants: [
+        {
+          begin: '///', end: '///',
+          contains: [SUBST, hljs.HASH_COMMENT_MODE]
+        },
+        {
+          begin: '//[gim]*',
+          relevance: 0
+        },
+        {
+          begin: '/\\S(\\\\.|[^\\n])*?/[gim]*(?=\\s|\\W|$)' // \S is required to parse x / 2 / 3 as two divisions
+        }
+      ]
     },
-
     {
       className: 'property',
       begin: '@' + JS_IDENT_RE
@@ -2672,7 +3464,7 @@ module.exports = function(hljs) {
       hljs.HASH_COMMENT_MODE,
       {
         className: 'function',
-        begin: '(' + JS_IDENT_RE + '\\s*=\\s*)?(\\(.*\\))?\\s*[-=]>', end: '[-=]>',
+        begin: '(' + JS_IDENT_RE + '\\s*=\\s*)?(\\(.*\\))?\\s*\\B[-=]>', end: '[-=]>',
         returnBegin: true,
         contains: [
           TITLE,
@@ -2691,14 +3483,14 @@ module.exports = function(hljs) {
       },
       {
         className: 'class',
-        beginWithKeyword: true, keywords: 'class',
+        beginKeywords: 'class',
         end: '$',
-        illegal: '[:\\[\\]]',
+        illegal: /[:="\[\]]/,
         contains: [
           {
-            beginWithKeyword: true, keywords: 'extends',
+            beginKeywords: 'extends',
             endsWithParent: true,
-            illegal: ':',
+            illegal: /[:="\[\]]/,
             contains: [TITLE]
           },
           TITLE
@@ -2707,12 +3499,13 @@ module.exports = function(hljs) {
       {
         className: 'attribute',
         begin: JS_IDENT_RE + ':', end: ':',
-        returnBegin: true, excludeEnd: true
+        returnBegin: true, excludeEnd: true,
+        relevance: 0
       }
     ])
   };
 };
-},{}],21:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 module.exports = function(hljs) {
   var CPP_KEYWORDS = {
     keyword: 'false int float while private char catch export virtual operator sizeof ' +
@@ -2721,12 +3514,19 @@ module.exports = function(hljs) {
       'do return goto auto void enum else break new extern using true class asm case typeid ' +
       'short reinterpret_cast|10 default double register explicit signed typename try this ' +
       'switch continue wchar_t inline delete alignof char16_t char32_t constexpr decltype ' +
-      'noexcept nullptr static_assert thread_local restrict _Bool complex',
+      'noexcept nullptr static_assert thread_local restrict _Bool complex _Complex _Imaginary',
     built_in: 'std string cin cout cerr clog stringstream istringstream ostringstream ' +
       'auto_ptr deque list queue stack vector map set bitset multiset multimap unordered_set ' +
-      'unordered_map unordered_multiset unordered_multimap array shared_ptr'
+      'unordered_map unordered_multiset unordered_multimap array shared_ptr abort abs acos ' +
+      'asin atan2 atan calloc ceil cosh cos exit exp fabs floor fmod fprintf fputs free frexp ' +
+      'fscanf isalnum isalpha iscntrl isdigit isgraph islower isprint ispunct isspace isupper ' +
+      'isxdigit tolower toupper labs ldexp log10 log malloc memchr memcmp memcpy memset modf pow ' +
+      'printf putchar puts scanf sinh sin snprintf sprintf sqrt sscanf strcat strchr strcmp ' +
+      'strcpy strcspn strlen strncat strncmp strncpy strpbrk strrchr strspn strstr tanh tan ' +
+      'vfprintf vprintf vsprintf'
   };
   return {
+    aliases: ['c'],
     keywords: CPP_KEYWORDS,
     illegal: '</',
     contains: [
@@ -2747,7 +3547,7 @@ module.exports = function(hljs) {
         className: 'preprocessor',
         begin: '#', end: '$',
         contains: [
-          {begin: '<', end: '>', illegal: '\\n'},
+          {begin: 'include\\s*<', end: '>', illegal: '\\n'},
           hljs.C_LINE_COMMENT_MODE
         ]
       },
@@ -2761,20 +3561,21 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],22:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 module.exports = function(hljs) {
+  var KEYWORDS =
+    // Normal keywords.
+    'abstract as base bool break byte case catch char checked const continue decimal ' +
+    'default delegate do double else enum event explicit extern false finally fixed float ' +
+    'for foreach goto if implicit in int interface internal is lock long new null ' +
+    'object operator out override params private protected public readonly ref return sbyte ' +
+    'sealed short sizeof stackalloc static string struct switch this throw true try typeof ' +
+    'uint ulong unchecked unsafe ushort using virtual volatile void while async await ' +
+    // Contextual keywords.
+    'ascending descending from get group into join let orderby partial select set value var ' +
+    'where yield';
   return {
-    keywords:
-      // Normal keywords.
-      'abstract as base bool break byte case catch char checked class const continue decimal ' +
-      'default delegate do double else enum event explicit extern false finally fixed float ' +
-      'for foreach goto if implicit in int interface internal is lock long namespace new null ' +
-      'object operator out override params private protected public readonly ref return sbyte ' +
-      'sealed short sizeof stackalloc static string struct switch this throw true try typeof ' +
-      'uint ulong unchecked unsafe ushort using virtual volatile void while async await ' +
-      // Contextual keywords.
-      'ascending descending from get group into join let orderby partial select set value var '+
-      'where yield',
+    keywords: KEYWORDS,
     contains: [
       {
         className: 'comment',
@@ -2804,11 +3605,29 @@ module.exports = function(hljs) {
       },
       hljs.APOS_STRING_MODE,
       hljs.QUOTE_STRING_MODE,
-      hljs.C_NUMBER_MODE
+      hljs.C_NUMBER_MODE,
+      {
+        beginKeywords: 'protected public private internal', end: /[{;=]/,
+        keywords: KEYWORDS,
+        contains: [
+          {
+            beginKeywords: 'class namespace interface',
+            starts: {
+              contains: [hljs.TITLE_MODE]
+            }
+          },
+          {
+            begin: hljs.IDENT_RE + '\\s*\\(', returnBegin: true,
+            contains: [
+              hljs.TITLE_MODE
+            ]
+          }
+        ]
+      }
     ]
   };
 };
-},{}],23:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 module.exports = function(hljs) {
   var IDENT_RE = '[a-zA-Z-][a-zA-Z0-9_-]*';
   var FUNCTION = {
@@ -2840,7 +3659,7 @@ module.exports = function(hljs) {
       {
         className: 'at_rule',
         begin: '@(font-face|page)',
-        lexems: '[a-z-]+',
+        lexemes: '[a-z-]+',
         keywords: 'font-face page'
       },
       {
@@ -2910,7 +3729,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],24:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 module.exports = /**
  * Known issues:
  *
@@ -3053,8 +3872,7 @@ function(hljs) {
 		className: 'string',
 		begin: '"',
 		contains: [D_ESCAPE_SEQUENCE],
-		end: '"[cwd]?',
-		relevance: 0
+		end: '"[cwd]?'
 	};
 
 	/**
@@ -3150,7 +3968,7 @@ function(hljs) {
 	}
 
 	return {
-		lexems: hljs.UNDERSCORE_IDENT_RE,
+		lexemes: hljs.UNDERSCORE_IDENT_RE,
 		keywords: D_KEYWORDS,
 		contains: [
 			hljs.C_LINE_COMMENT_MODE,
@@ -3170,122 +3988,88 @@ function(hljs) {
 		]
 	};
 };
-},{}],25:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 module.exports = function(hljs) {
-  var DELPHI_KEYWORDS = 'and safecall cdecl then string exports library not pascal set ' +
-    'virtual file in array label packed end. index while const raise for to implementation ' +
-    'with except overload destructor downto finally program exit unit inherited override if ' +
-    'type until function do begin repeat goto nil far initialization object else var uses ' +
-    'external resourcestring interface end finalization class asm mod case on shr shl of ' +
-    'register xorwrite threadvar try record near stored constructor stdcall inline div out or ' +
-    'procedure';
-  var DELPHI_CLASS_KEYWORDS = 'safecall stdcall pascal stored const implementation ' +
-    'finalization except to finally program inherited override then exports string read not ' +
-    'mod shr try div shl set library message packed index for near overload label downto exit ' +
-    'public goto interface asm on of constructor or private array unit raise destructor var ' +
-    'type until function else external with case default record while protected property ' +
-    'procedure published and cdecl do threadvar file in if end virtual write far out begin ' +
-    'repeat nil initialization object uses resourcestring class register xorwrite inline static';
-  var CURLY_COMMENT =  {
+  var KEYWORDS =
+    'exports register file shl array record property for mod while set ally label uses raise not ' +
+    'stored class safecall var interface or private static exit index inherited to else stdcall ' +
+    'override shr asm far resourcestring finalization packed virtual out and protected library do ' +
+    'xorwrite goto near function end div overload object unit begin string on inline repeat until ' +
+    'destructor write message program with read initialization except default nil if case cdecl in ' +
+    'downto threadvar of try pascal const external constructor type public then implementation ' +
+    'finally published procedure';
+  var COMMENT =  {
     className: 'comment',
-    begin: '{', end: '}',
-    relevance: 0
-  };
-  var PAREN_COMMENT = {
-    className: 'comment',
-    begin: '\\(\\*', end: '\\*\\)',
-    relevance: 10
+    variants: [
+      {begin: /\{/, end: /\}/, relevance: 0},
+      {begin: /\(\*/, end: /\*\)/, relevance: 10}
+    ]
   };
   var STRING = {
     className: 'string',
-    begin: '\'', end: '\'',
-    contains: [{begin: '\'\''}],
-    relevance: 0
+    begin: /'/, end: /'/,
+    contains: [{begin: /''/}]
   };
   var CHAR_STRING = {
-    className: 'string', begin: '(#\\d+)+'
+    className: 'string', begin: /(#\d+)+/
+  };
+  var CLASS = {
+    begin: hljs.IDENT_RE + '\\s*=\\s*class\\s*\\(', returnBegin: true,
+    contains: [
+      hljs.TITLE_MODE
+    ]
   };
   var FUNCTION = {
     className: 'function',
-    beginWithKeyword: true, end: '[:;]',
+    beginKeywords: 'function constructor destructor procedure', end: /[:;]/,
     keywords: 'function constructor|10 destructor|10 procedure|10',
     contains: [
-      {
-        className: 'title', begin: hljs.IDENT_RE
-      },
+      hljs.TITLE_MODE,
       {
         className: 'params',
-        begin: '\\(', end: '\\)',
-        keywords: DELPHI_KEYWORDS,
+        begin: /\(/, end: /\)/,
+        keywords: KEYWORDS,
         contains: [STRING, CHAR_STRING]
       },
-      CURLY_COMMENT, PAREN_COMMENT
+      COMMENT
     ]
   };
   return {
     case_insensitive: true,
-    keywords: DELPHI_KEYWORDS,
-    illegal: '("|\\$[G-Zg-z]|\\/\\*|</)',
+    keywords: KEYWORDS,
+    illegal: /("|\$[G-Zg-z]|\/\*|<\/)/,
     contains: [
-      CURLY_COMMENT, PAREN_COMMENT, hljs.C_LINE_COMMENT_MODE,
+      COMMENT, hljs.C_LINE_COMMENT_MODE,
       STRING, CHAR_STRING,
       hljs.NUMBER_MODE,
-      FUNCTION,
-      {
-        className: 'class',
-        begin: '=\\bclass\\b', end: 'end;',
-        keywords: DELPHI_CLASS_KEYWORDS,
-        contains: [
-          STRING, CHAR_STRING,
-          CURLY_COMMENT, PAREN_COMMENT, hljs.C_LINE_COMMENT_MODE,
-          FUNCTION
-        ]
-      }
+      CLASS,
+      FUNCTION
     ]
   };
 };
-},{}],26:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
       {
         className: 'chunk',
-        begin: '^\\@\\@ +\\-\\d+,\\d+ +\\+\\d+,\\d+ +\\@\\@$',
-        relevance: 10
-      },
-      {
-        className: 'chunk',
-        begin: '^\\*\\*\\* +\\d+,\\d+ +\\*\\*\\*\\*$',
-        relevance: 10
-      },
-      {
-        className: 'chunk',
-        begin: '^\\-\\-\\- +\\d+,\\d+ +\\-\\-\\-\\-$',
-        relevance: 10
+        relevance: 10,
+        variants: [
+          {begin: /^\@\@ +\-\d+,\d+ +\+\d+,\d+ +\@\@$/},
+          {begin: /^\*\*\* +\d+,\d+ +\*\*\*\*$/},
+          {begin: /^\-\-\- +\d+,\d+ +\-\-\-\-$/}
+        ]
       },
       {
         className: 'header',
-        begin: 'Index: ', end: '$'
-      },
-      {
-        className: 'header',
-        begin: '=====', end: '=====$'
-      },
-      {
-        className: 'header',
-        begin: '^\\-\\-\\-', end: '$'
-      },
-      {
-        className: 'header',
-        begin: '^\\*{3} ', end: '$'
-      },
-      {
-        className: 'header',
-        begin: '^\\+\\+\\+', end: '$'
-      },
-      {
-        className: 'header',
-        begin: '\\*{5}', end: '\\*{5}$'
+        variants: [
+          {begin: /Index: /, end: /$/},
+          {begin: /=====/, end: /=====$/},
+          {begin: /^\-\-\-/, end: /$/},
+          {begin: /^\*{3} /, end: /$/},
+          {begin: /^\+\+\+/, end: /$/},
+          {begin: /\*{5}/, end: /\*{5}$/}
+        ]
       },
       {
         className: 'addition',
@@ -3302,7 +4086,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],27:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 module.exports = function(hljs) {
   var FILTER = {
     className: 'filter',
@@ -3328,15 +4112,15 @@ module.exports = function(hljs) {
     contains: [
       {
         className: 'template_comment',
-        begin: /{%\s*comment\s*%}/, end: /{%\s*endcomment\s*%}/
+        begin: /\{%\s*comment\s*%}/, end: /\{%\s*endcomment\s*%}/
       },
       {
         className: 'template_comment',
-        begin: /{#/, end: /#}/
+        begin: /\{#/, end: /#}/
       },
       {
         className: 'template_tag',
-        begin: /{%/, end: /%}/,
+        begin: /\{%/, end: /%}/,
         keywords:
           'comment endcomment load templatetag ifchanged endifchanged if endif firstof for ' +
           'endfor in ifnotequal endifnotequal widthratio extends include spaceless ' +
@@ -3351,13 +4135,13 @@ module.exports = function(hljs) {
       },
       {
         className: 'variable',
-        begin: /{{/, end: /}}/,
+        begin: /\{\{/, end: /}}/,
         contains: [FILTER]
       }
     ]
   };
 };
-},{}],28:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -3388,7 +4172,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],29:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -3439,7 +4223,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],30:[function(require,module,exports){
+},{}],33:[function(require,module,exports){
 module.exports = function(hljs) {
   var BASIC_ATOM_RE = '[a-z\'][a-zA-Z0-9_\']*';
   var FUNCTION_NAME_RE = '(' + BASIC_ATOM_RE + ':' + BASIC_ATOM_RE + '|' + BASIC_ATOM_RE + ')';
@@ -3516,8 +4300,8 @@ module.exports = function(hljs) {
   };
 
   var BLOCK_STATEMENTS = {
-    keywords: ERLANG_RESERVED,
-    begin: '(fun|receive|if|try|case)', end: 'end'
+    beginKeywords: 'fun receive if try case', end: 'end',
+    keywords: ERLANG_RESERVED
   };
   BLOCK_STATEMENTS.contains = [
     COMMENT,
@@ -3560,12 +4344,10 @@ module.exports = function(hljs) {
         className: 'function',
         begin: '^' + BASIC_ATOM_RE + '\\s*\\(', end: '->',
         returnBegin: true,
-        illegal: '\\(|#|//|/\\*|\\\\|:',
+        illegal: '\\(|#|//|/\\*|\\\\|:|;',
         contains: [
           PARAMS,
-          {
-            className: 'title', begin: BASIC_ATOM_RE
-          }
+          hljs.inherit(hljs.TITLE_MODE, {begin: BASIC_ATOM_RE})
         ],
         starts: {
           end: ';|\\.',
@@ -3580,7 +4362,7 @@ module.exports = function(hljs) {
         relevance: 0,
         excludeEnd: true,
         returnBegin: true,
-        lexems: '-' + hljs.IDENT_RE,
+        lexemes: '-' + hljs.IDENT_RE,
         keywords:
           '-module -record -undef -export -ifdef -ifndef -author -copyright -doc -vsn ' +
           '-import -include -include_lib -compile -define -else -endif -file -behaviour ' +
@@ -3595,7 +4377,36 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],31:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
+module.exports = function(hljs) {
+  return {
+    contains: [
+    {
+      begin: /[^\u2401\u0001]+/,
+      end: /[\u2401\u0001]/,
+      excludeEnd: true,
+      returnBegin: true,
+      returnEnd: false,
+      contains: [
+      {
+        begin: /([^\u2401\u0001=]+)/,
+        end: /=([^\u2401\u0001=]+)/,
+        returnEnd: true,
+        returnBegin: false,
+        className: 'attribute'
+      },
+      {
+        begin: /=/,
+        end: /([\u2401\u0001])/,
+        excludeEnd: true,
+        excludeBegin: true,
+        className: 'string'
+      }]
+    }],
+    case_insensitive: true
+  };
+};
+},{}],35:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords:
@@ -3622,13 +4433,9 @@ module.exports = function(hljs) {
       },
       {
         className: 'class',
-        beginWithKeyword: true, end: '\\(|=|$',
-        keywords: 'type',
+        beginKeywords: 'type', end: '\\(|=|$',
         contains: [
-          {
-            className: 'title',
-            begin: hljs.UNDERSCORE_IDENT_RE
-          }
+          hljs.UNDERSCORE_TITLE_MODE
         ]
       },
       {
@@ -3646,7 +4453,7 @@ module.exports = function(hljs) {
     ]
   }
 };
-},{}],32:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -3740,7 +4547,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],33:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 module.exports = function(hljs) {
   var GO_KEYWORDS = {
     keyword:
@@ -3755,6 +4562,7 @@ module.exports = function(hljs) {
       'append cap close complex copy imag len make new panic print println real recover delete'
   };
   return {
+    aliases: ["golang"],
     keywords: GO_KEYWORDS,
     illegal: '</',
     contains: [
@@ -3763,8 +4571,7 @@ module.exports = function(hljs) {
       hljs.QUOTE_STRING_MODE,
       {
         className: 'string',
-        begin: '\'', end: '[^\\\\]\'',
-        relevance: 0
+        begin: '\'', end: '[^\\\\]\''
       },
       {
         className: 'string',
@@ -3779,7 +4586,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],34:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 module.exports = // TODO support filter tags like :javascript, support inline HTML
 function(hljs) {
   return {
@@ -3793,16 +4600,15 @@ function(hljs) {
       {
         className: 'comment',
         // FIXME these comments should be allowed to span indented lines
-        begin: '^\\s*(-#|/).*$',
+        begin: '^\\s*(!=#|=#|-#|/).*$',
         relevance: 0
       },
       {
-        begin: '^\\s*-(?!#)',
+        begin: '^\\s*(-|=|!=)(?!#)',
         starts: {
           end: '\\n',
           subLanguage: 'ruby'
-        },
-        relevance: 0
+        }
       },
       {
         className: 'tag',
@@ -3810,13 +4616,11 @@ function(hljs) {
         contains: [
           {
             className: 'title',
-            begin: '\\w+',
-            relevance: 0
+            begin: '\\w+'
           },
           {
             className: 'value',
-            begin: '[#\\.]\\w+',
-            relevance: 0
+            begin: '[#\\.]\\w+'
           },
           {
             begin: '{\\s*',
@@ -3829,33 +4633,28 @@ function(hljs) {
                 end: ',\\s+',
                 returnBegin: true,
                 endsWithParent: true,
-                relevance: 0,
                 contains: [
                   {
                     className: 'symbol',
-                    begin: ':\\w+',
-                    relevance: 0
+                    begin: ':\\w+'
                   },
                   {
                     className: 'string',
                     begin: '"',
-                    end: '"',
-                    relevance: 0
+                    end: '"'
                   },
                   {
                     className: 'string',
                     begin: '\'',
-                    end: '\'',
-                    relevance: 0
+                    end: '\''
                   },
                   {
                     begin: '\\w+',
                     relevance: 0
                   }
                 ]
-              },
-            ],
-            relevance: 0
+              }
+            ]
           },
           {
             begin: '\\(\\s*',
@@ -3868,7 +4667,6 @@ function(hljs) {
                 end: '\\s+',
                 returnBegin: true,
                 endsWithParent: true,
-                relevance: 0,
                 contains: [
                   {
                     className: 'attribute',
@@ -3878,14 +4676,12 @@ function(hljs) {
                   {
                     className: 'string',
                     begin: '"',
-                    end: '"',
-                    relevance: 0
+                    end: '"'
                   },
                   {
                     className: 'string',
                     begin: '\'',
-                    end: '\'',
-                    relevance: 0
+                    end: '\''
                   },
                   {
                     begin: '\\w+',
@@ -3893,11 +4689,9 @@ function(hljs) {
                   }
                 ]
               },
-            ],
-            relevance: 0
+            ]
           }
-        ],
-        relevance: 10
+        ]
       },
       {
         className: 'bullet',
@@ -3909,13 +4703,12 @@ function(hljs) {
         starts: {
           end: '}',
           subLanguage: 'ruby'
-        },
-        relevance: 0
+        }
       }
     ]
   };
 };
-},{}],35:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 module.exports = function(hljs) {
   var EXPRESSION_KEYWORDS = 'each in with if else unless bindattr action collection debugger log outlet template unbound view yield';
   return {
@@ -3927,7 +4720,7 @@ module.exports = function(hljs) {
         begin: '{{', end: '}}',
         contains: [
           {
-            className: 'begin-block', begin: '\#[a-zA-Z\ \.]+',
+            className: 'begin-block', begin: '\#[a-zA-Z\-\ \.]+',
             keywords: EXPRESSION_KEYWORDS
           },
           {
@@ -3935,11 +4728,11 @@ module.exports = function(hljs) {
             begin: '"', end: '"'
           },
           {
-            className: 'end-block', begin: '\\\/[a-zA-Z\ \.]+',
+            className: 'end-block', begin: '\\\/[a-zA-Z\-\ \.]+',
             keywords: EXPRESSION_KEYWORDS
           },
           {
-            className: 'variable', begin: '[a-zA-Z\.]+',
+            className: 'variable', begin: '[a-zA-Z\-\.]+',
             keywords: EXPRESSION_KEYWORDS
           }
         ]
@@ -3947,18 +4740,17 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],36:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 module.exports = function(hljs) {
 
-  var COMMENT1 = {
+  var COMMENT = {
     className: 'comment',
-    begin: '--', end: '$'
-  };
-
-  var COMMENT2 = {
-    className: 'comment',
-    contains: ['self'],
-    begin: '{-', end: '-}'
+    variants: [
+      { begin: '--', end: '$' },
+      { begin: '{-', end: '-}'
+      , contains: ['self']
+      }
+    ]
   };
 
   var PRAGMA = {
@@ -3983,11 +4775,10 @@ module.exports = function(hljs) {
     illegal: '"',
     contains: [
       PRAGMA,
-      COMMENT1,
-      COMMENT2,
+      COMMENT,
       PREPROCESSOR,
       {className: 'type', begin: '\\b[A-Z][\\w]*(\\((\\.\\.|,|\\w+)\\))?'},
-      { className: 'title', begin: '[_a-z][\\w\']*' }
+      hljs.inherit(hljs.TITLE_MODE, {begin: '[_a-z][\\w\']*'})
     ]
   };
 
@@ -3999,58 +4790,57 @@ module.exports = function(hljs) {
 
   return {
     keywords:
-      'let in if then else case of where do module import hiding qualified type data ' +
-      'newtype deriving class instance as default infix infixl infixr ' +
-      'foreign export ccall stdcall cplusplus jvm dotnet safe unsafe ' +
-      'family forall mdo proc rec',
+      'let in if then else case of where do module import hiding ' +
+      'qualified type data newtype deriving class instance as default ' +
+      'infix infixl infixr foreign export ccall stdcall cplusplus ' +
+      'jvm dotnet safe unsafe family forall mdo proc rec',
     contains: [
 
       // Top-level constructions.
 
       {
         className: 'module',
-        begin: '\\bmodule ', end: 'where',
+        begin: '\\bmodule\\b', end: 'where',
         keywords: 'module where',
-        contains: [LIST, COMMENT2],
+        contains: [LIST, COMMENT],
         illegal: '\\W\\.|;'
       },
       {
         className: 'import',
-        begin: '\\bimport ', end: '$',
-        keywords: 'import qualified as hiding',
-        contains: [LIST, COMMENT1, COMMENT2],
+        begin: '\\bimport\\b', end: '$',
+        keywords: 'import|0 qualified as hiding',
+        contains: [LIST, COMMENT],
         illegal: '\\W\\.|;'
       },
 
       {
         className: 'class',
-        begin: '\\b(class |instance )', end: 'where',
+        begin: '^(\\s*)?(class|instance)\\b', end: 'where',
         keywords: 'class family instance where',
-        contains: [CONSTRUCTOR, LIST, COMMENT2]
+        contains: [CONSTRUCTOR, LIST, COMMENT]
       },
       {
         className: 'typedef',
-        begin: '\\b(data |(new)?type )', end: '$',
+        begin: '\\b(data|(new)?type)\\b', end: '$',
         keywords: 'data family type newtype deriving',
-        contains: [PRAGMA, COMMENT1, COMMENT2, CONSTRUCTOR, LIST, RECORD]
+        contains: [PRAGMA, COMMENT, CONSTRUCTOR, LIST, RECORD]
       },
       {
         className: 'default',
-        begin: '\\bdefault ', end: '$',
-        keywords: 'default',
-        contains: [CONSTRUCTOR, LIST, COMMENT1, COMMENT2]
+        beginKeywords: 'default', end: '$',
+        contains: [CONSTRUCTOR, LIST, COMMENT]
       },
       {
         className: 'infix',
-        begin: '\\b(infix |infixl |infixr )', end: '$',
-        keywords: 'infix infixl infixr',
-        contains: [hljs.C_NUMBER_MODE, COMMENT1, COMMENT2]
+        beginKeywords: 'infix infixl infixr', end: '$',
+        contains: [hljs.C_NUMBER_MODE, COMMENT]
       },
       {
         className: 'foreign',
-        begin: '\\bforeign ', end: '$',
-        keywords: 'foreign import export ccall stdcall cplusplus jvm dotnet safe unsafe',
-        contains: [CONSTRUCTOR, hljs.QUOTE_STRING_MODE, COMMENT1, COMMENT2]
+        begin: '\\bforeign\\b', end: '$',
+        keywords: 'foreign import export ccall stdcall cplusplus jvm ' +
+                  'dotnet safe unsafe',
+        contains: [CONSTRUCTOR, hljs.QUOTE_STRING_MODE, COMMENT]
       },
       {
         className: 'shebang',
@@ -4060,8 +4850,7 @@ module.exports = function(hljs) {
       // "Whitespaces".
 
       PRAGMA,
-      COMMENT1,
-      COMMENT2,
+      COMMENT,
       PREPROCESSOR,
 
       // Literals and names.
@@ -4070,722 +4859,13 @@ module.exports = function(hljs) {
       hljs.QUOTE_STRING_MODE,
       hljs.C_NUMBER_MODE,
       CONSTRUCTOR,
-      { className: 'title', begin: '^[_a-z][\\w\']*' },
+      hljs.inherit(hljs.TITLE_MODE, {begin: '^[_a-z][\\w\']*'}),
 
       {begin: '->|<-'} // No markup, relevance booster
     ]
   };
 };
-},{}],37:[function(require,module,exports){
-var hljs = new function() {
-
-  /* Utility functions */
-
-  function escape(value) {
-    return value.replace(/&/gm, '&amp;').replace(/</gm, '&lt;').replace(/>/gm, '&gt;');
-  }
-
-  function findCode(pre) {
-    for (var node = pre.firstChild; node; node = node.nextSibling) {
-      if (node.nodeName.toUpperCase () == 'CODE')
-        return node;
-      if (!(node.nodeType == 3 && node.nodeValue.match(/\s+/)))
-        break;
-    }
-  }
-
-  function blockText(block, ignoreNewLines) {
-    return Array.prototype.map.call(block.childNodes, function(node) {
-      if (node.nodeType == 3) {
-        return ignoreNewLines ? node.nodeValue.replace(/\n/g, '') : node.nodeValue;
-      }
-      if (node.nodeName.toUpperCase () == 'BR') {
-        return '\n';
-      }
-      return blockText(node, ignoreNewLines);
-    }).join('');
-  }
-
-  function blockLanguage(block) {
-    var classes = (block.className + ' ' + (block.parentNode ? block.parentNode.className : '')).split(/\s+/);
-    classes = classes.map(function(c) {return c.replace(/^language-/, '');});
-    for (var i = 0; i < classes.length; i++) {
-      if (languages[classes[i]] || classes[i] == 'no-highlight') {
-        return classes[i];
-      }
-    }
-  }
-
-  /* Stream merging */
-
-  function nodeStream(node) {
-    var result = [];
-    (function _nodeStream(node, offset) {
-      for (var child = node.firstChild; child; child = child.nextSibling) {
-        if (child.nodeType == 3)
-          offset += child.nodeValue.length;
-        else if (child.nodeName.toUpperCase() == 'BR')
-          offset += 1;
-        else if (child.nodeType == 1) {
-          result.push({
-            event: 'start',
-            offset: offset,
-            node: child
-          });
-          offset = _nodeStream(child, offset);
-          result.push({
-            event: 'stop',
-            offset: offset,
-            node: child
-          });
-        }
-      }
-      return offset;
-    })(node, 0);
-    return result;
-  }
-
-  function mergeStreams(original, highlighted, value) {
-    var processed = 0;
-    var result = '';
-    var nodeStack = [];
-
-    function selectStream() {
-      if (!original.length || !highlighted.length) {
-        return original.length ? original : highlighted;
-      }
-      if (original[0].offset != highlighted[0].offset) {
-        return (original[0].offset < highlighted[0].offset) ? original : highlighted;
-      }
-
-      /*
-      To avoid starting the stream just before it should stop the order is
-      ensured that original always starts first and closes last:
-
-      if (event1 == 'start' && event2 == 'start')
-        return original;
-      if (event1 == 'start' && event2 == 'stop')
-        return highlighted;
-      if (event1 == 'stop' && event2 == 'start')
-        return original;
-      if (event1 == 'stop' && event2 == 'stop')
-        return highlighted;
-
-      ... which is collapsed to:
-      */
-      return highlighted[0].event == 'start' ? original : highlighted;
-    }
-
-    function open(node) {
-      function attr_str(a) {return ' ' + a.nodeName + '="' + escape(a.value) + '"';}
-      result += '<' + node.nodeName.toLowerCase() + Array.prototype.map.call(node.attributes, attr_str).join('') + '>';
-    }
-
-    function close(node) {
-      result += '</' + node.nodeName.toLowerCase() + '>';
-    }
-
-    function render(event) {
-      (event.event == 'start' ? open : close)(event.node);
-    }
-
-    while (original.length || highlighted.length) {
-      var stream = selectStream();
-      result += escape(value.substr(processed, stream[0].offset - processed));
-      processed = stream[0].offset;
-      if (stream == original) {
-        /*
-        On any opening or closing tag of the original markup we first close
-        the entire highlighted node stack, then render the original tag along
-        with all the following original tags at the same offset and then
-        reopen all the tags on the highlighted stack.
-        */
-        nodeStack.reverse().forEach(close);
-        do {
-          render(stream.splice(0, 1)[0]);
-          stream = selectStream();
-        } while (stream == original && stream.length && stream[0].offset == processed);
-        nodeStack.reverse().forEach(open);
-      } else {
-        if (stream[0].event == 'start') {
-          nodeStack.push(stream[0].node);
-        } else {
-          nodeStack.pop();
-        }
-        render(stream.splice(0, 1)[0]);
-      }
-    }
-    return result + escape(value.substr(processed));
-  }
-
-  /* Initialization */
-
-  function compileLanguage(language) {
-
-    function reStr(re) {
-        return (re && re.source) || re;
-    }
-
-    function langRe(value, global) {
-      return RegExp(
-        reStr(value),
-        'm' + (language.case_insensitive ? 'i' : '') + (global ? 'g' : '')
-      );
-    }
-
-    function compileMode(mode, parent) {
-      if (mode.compiled)
-        return;
-      mode.compiled = true;
-
-      var keywords = []; // used later with beginWithKeyword but filled as a side-effect of keywords compilation
-      if (mode.keywords) {
-        var compiled_keywords = {};
-
-        function flatten(className, str) {
-          if (language.case_insensitive) {
-            str = str.toLowerCase();
-          }
-          str.split(' ').forEach(function(kw) {
-            var pair = kw.split('|');
-            compiled_keywords[pair[0]] = [className, pair[1] ? Number(pair[1]) : 1];
-            keywords.push(pair[0]);
-          });
-        }
-
-        mode.lexemsRe = langRe(mode.lexems || '\\b' + hljs.IDENT_RE + '\\b(?!\\.)', true);
-        if (typeof mode.keywords == 'string') { // string
-          flatten('keyword', mode.keywords);
-        } else {
-          for (var className in mode.keywords) {
-            if (!mode.keywords.hasOwnProperty(className))
-              continue;
-            flatten(className, mode.keywords[className]);
-          }
-        }
-        mode.keywords = compiled_keywords;
-      }
-      if (parent) {
-        if (mode.beginWithKeyword) {
-          mode.begin = '\\b(' + keywords.join('|') + ')\\b(?!\\.)\\s*';
-        }
-        mode.beginRe = langRe(mode.begin ? mode.begin : '\\B|\\b');
-        if (!mode.end && !mode.endsWithParent)
-          mode.end = '\\B|\\b';
-        if (mode.end)
-          mode.endRe = langRe(mode.end);
-        mode.terminator_end = reStr(mode.end) || '';
-        if (mode.endsWithParent && parent.terminator_end)
-          mode.terminator_end += (mode.end ? '|' : '') + parent.terminator_end;
-      }
-      if (mode.illegal)
-        mode.illegalRe = langRe(mode.illegal);
-      if (mode.relevance === undefined)
-        mode.relevance = 1;
-      if (!mode.contains) {
-        mode.contains = [];
-      }
-      for (var i = 0; i < mode.contains.length; i++) {
-        if (mode.contains[i] == 'self') {
-          mode.contains[i] = mode;
-        }
-        compileMode(mode.contains[i], mode);
-      }
-      if (mode.starts) {
-        compileMode(mode.starts, parent);
-      }
-
-      var terminators = [];
-      for (var i = 0; i < mode.contains.length; i++) {
-        terminators.push(reStr(mode.contains[i].begin));
-      }
-      if (mode.terminator_end) {
-        terminators.push(reStr(mode.terminator_end));
-      }
-      if (mode.illegal) {
-        terminators.push(reStr(mode.illegal));
-      }
-      mode.terminators = terminators.length ? langRe(terminators.join('|'), true) : {exec: function(s) {return null;}};
-    }
-
-    compileMode(language);
-  }
-
-  /*
-  Core highlighting function. Accepts a language name and a string with the
-  code to highlight. Returns an object with the following properties:
-
-  - relevance (int)
-  - keyword_count (int)
-  - value (an HTML string with highlighting markup)
-
-  */
-  function highlight(language_name, value, ignore_illegals, continuation) {
-
-    function subMode(lexem, mode) {
-      for (var i = 0; i < mode.contains.length; i++) {
-        var match = mode.contains[i].beginRe.exec(lexem);
-        if (match && match.index == 0) {
-          return mode.contains[i];
-        }
-      }
-    }
-
-    function endOfMode(mode, lexem) {
-      if (mode.end && mode.endRe.test(lexem)) {
-        return mode;
-      }
-      if (mode.endsWithParent) {
-        return endOfMode(mode.parent, lexem);
-      }
-    }
-
-    function isIllegal(lexem, mode) {
-      return !ignore_illegals && mode.illegal && mode.illegalRe.test(lexem);
-    }
-
-    function keywordMatch(mode, match) {
-      var match_str = language.case_insensitive ? match[0].toLowerCase() : match[0];
-      return mode.keywords.hasOwnProperty(match_str) && mode.keywords[match_str];
-    }
-
-    function processKeywords() {
-      var buffer = escape(mode_buffer);
-      if (!top.keywords)
-        return buffer;
-      var result = '';
-      var last_index = 0;
-      top.lexemsRe.lastIndex = 0;
-      var match = top.lexemsRe.exec(buffer);
-      while (match) {
-        result += buffer.substr(last_index, match.index - last_index);
-        var keyword_match = keywordMatch(top, match);
-        if (keyword_match) {
-          keyword_count += keyword_match[1];
-          result += '<span class="'+ keyword_match[0] +'">' + match[0] + '</span>';
-        } else {
-          result += match[0];
-        }
-        last_index = top.lexemsRe.lastIndex;
-        match = top.lexemsRe.exec(buffer);
-      }
-      return result + buffer.substr(last_index);
-    }
-
-    function processSubLanguage() {
-      if (top.subLanguage && !languages[top.subLanguage]) {
-        return escape(mode_buffer);
-      }
-      var continuation = top.subLanguageMode == 'continuous' ? top.top : undefined;
-      var result = top.subLanguage ? highlight(top.subLanguage, mode_buffer, true, continuation) : highlightAuto(mode_buffer);
-      // Counting embedded language score towards the host language may be disabled
-      // with zeroing the containing mode relevance. Usecase in point is Markdown that
-      // allows XML everywhere and makes every XML snippet to have a much larger Markdown
-      // score.
-      if (top.relevance > 0) {
-        keyword_count += result.keyword_count;
-        relevance += result.relevance;
-      }
-      top.top = result.top;
-      return '<span class="' + result.language  + '">' + result.value + '</span>';
-    }
-
-    function processBuffer() {
-      return top.subLanguage !== undefined ? processSubLanguage() : processKeywords();
-    }
-
-    function startNewMode(mode, lexem) {
-      var markup = mode.className? '<span class="' + mode.className + '">': '';
-      if (mode.returnBegin) {
-        result += markup;
-        mode_buffer = '';
-      } else if (mode.excludeBegin) {
-        result += escape(lexem) + markup;
-        mode_buffer = '';
-      } else {
-        result += markup;
-        mode_buffer = lexem;
-      }
-      top = Object.create(mode, {parent: {value: top}});
-    }
-
-    function processLexem(buffer, lexem) {
-      mode_buffer += buffer;
-      if (lexem === undefined) {
-        result += processBuffer();
-        return 0;
-      }
-
-      var new_mode = subMode(lexem, top);
-      if (new_mode) {
-        result += processBuffer();
-        startNewMode(new_mode, lexem);
-        return new_mode.returnBegin ? 0 : lexem.length;
-      }
-
-      var end_mode = endOfMode(top, lexem);
-      if (end_mode) {
-        var origin = top;
-        if (!(origin.returnEnd || origin.excludeEnd)) {
-          mode_buffer += lexem;
-        }
-        result += processBuffer();
-        do {
-          if (top.className) {
-            result += '</span>';
-          }
-          relevance += top.relevance;
-          top = top.parent;
-        } while (top != end_mode.parent);
-        if (origin.excludeEnd) {
-          result += escape(lexem);
-        }
-        mode_buffer = '';
-        if (end_mode.starts) {
-          startNewMode(end_mode.starts, '');
-        }
-        return origin.returnEnd ? 0 : lexem.length;
-      }
-
-      if (isIllegal(lexem, top))
-        throw new Error('Illegal lexem "' + lexem + '" for mode "' + (top.className || '<unnamed>') + '"');
-
-      /*
-      Parser should not reach this point as all types of lexems should be caught
-      earlier, but if it does due to some bug make sure it advances at least one
-      character forward to prevent infinite looping.
-      */
-      mode_buffer += lexem;
-      return lexem.length || 1;
-    }
-
-    var language = languages[language_name];
-    if (!language) {
-      throw new Error('Unknown language: "' + language_name + '"');
-    }
-
-    compileLanguage(language);
-    var top = continuation || language;
-    var result = '';
-    for(var current = top; current != language; current = current.parent) {
-      if (current.className) {
-        result = '<span class="' + current.className +'">' + result;
-      }
-    }
-    var mode_buffer = '';
-    var relevance = 0;
-    var keyword_count = 0;
-    try {
-      var match, count, index = 0;
-      while (true) {
-        top.terminators.lastIndex = index;
-        match = top.terminators.exec(value);
-        if (!match)
-          break;
-        count = processLexem(value.substr(index, match.index - index), match[0]);
-        index = match.index + count;
-      }
-      processLexem(value.substr(index));
-      for(var current = top; current.parent; current = current.parent) { // close dangling modes
-        if (current.className) {
-          result += '</span>';
-        }
-      };
-      return {
-        relevance: relevance,
-        keyword_count: keyword_count,
-        value: result,
-        language: language_name,
-        top: top
-      };
-    } catch (e) {
-      if (e.message.indexOf('Illegal') != -1) {
-        return {
-          relevance: 0,
-          keyword_count: 0,
-          value: escape(value)
-        };
-      } else {
-        throw e;
-      }
-    }
-  }
-
-  /*
-  Highlighting with language detection. Accepts a string with the code to
-  highlight. Returns an object with the following properties:
-
-  - language (detected language)
-  - relevance (int)
-  - keyword_count (int)
-  - value (an HTML string with highlighting markup)
-  - second_best (object with the same structure for second-best heuristically
-    detected language, may be absent)
-
-  */
-  function highlightAuto(text) {
-    var result = {
-      keyword_count: 0,
-      relevance: 0,
-      value: escape(text)
-    };
-    var second_best = result;
-    for (var key in languages) {
-      if (!languages.hasOwnProperty(key))
-        continue;
-      var current = highlight(key, text, false);
-      current.language = key;
-      if (current.keyword_count + current.relevance > second_best.keyword_count + second_best.relevance) {
-        second_best = current;
-      }
-      if (current.keyword_count + current.relevance > result.keyword_count + result.relevance) {
-        second_best = result;
-        result = current;
-      }
-    }
-    if (second_best.language) {
-      result.second_best = second_best;
-    }
-    return result;
-  }
-
-  /*
-  Post-processing of the highlighted markup:
-
-  - replace TABs with something more useful
-  - replace real line-breaks with '<br>' for non-pre containers
-
-  */
-  function fixMarkup(value, tabReplace, useBR) {
-    if (tabReplace) {
-      value = value.replace(/^((<[^>]+>|\t)+)/gm, function(match, p1, offset, s) {
-        return p1.replace(/\t/g, tabReplace);
-      });
-    }
-    if (useBR) {
-      value = value.replace(/\n/g, '<br>');
-    }
-    return value;
-  }
-
-  /*
-  Applies highlighting to a DOM node containing code. Accepts a DOM node and
-  two optional parameters for fixMarkup.
-  */
-  function highlightBlock(block, tabReplace, useBR) {
-    var text = blockText(block, useBR);
-    var language = blockLanguage(block);
-    if (language == 'no-highlight')
-        return;
-    var result = language ? highlight(language, text, true) : highlightAuto(text);
-    language = result.language;
-    var original = nodeStream(block);
-    if (original.length) {
-      var pre = document.createElementNS('http://www.w3.org/1999/xhtml', 'pre');
-      pre.innerHTML = result.value;
-      result.value = mergeStreams(original, nodeStream(pre), text);
-    }
-    result.value = fixMarkup(result.value, tabReplace, useBR);
-
-    var class_name = block.className;
-    if (!class_name.match('(\\s|^)(language-)?' + language + '(\\s|$)')) {
-      class_name = class_name ? (class_name + ' ' + language) : language;
-    }
-    block.innerHTML = result.value;
-    block.className = class_name;
-    block.result = {
-      language: language,
-      kw: result.keyword_count,
-      re: result.relevance
-    };
-    if (result.second_best) {
-      block.second_best = {
-        language: result.second_best.language,
-        kw: result.second_best.keyword_count,
-        re: result.second_best.relevance
-      };
-    }
-  }
-
-  /*
-  Applies highlighting to all <pre><code>..</code></pre> blocks on a page.
-  */
-  function initHighlighting() {
-    if (initHighlighting.called)
-      return;
-    initHighlighting.called = true;
-    Array.prototype.map.call(document.getElementsByTagNameNS('http://www.w3.org/1999/xhtml', 'pre'), findCode).
-      filter(Boolean).
-      forEach(function(code){highlightBlock(code, hljs.tabReplace);});
-  }
-
-  /*
-  Attaches highlighting to the page load event.
-  */
-  function initHighlightingOnLoad() {
-    window.addEventListener('DOMContentLoaded', initHighlighting, false);
-    window.addEventListener('load', initHighlighting, false);
-  }
-
-  var languages = {}; // a shortcut to avoid writing "this." everywhere
-
-  /* Interface definition */
-
-  this.LANGUAGES = languages;
-  this.highlight = highlight;
-  this.highlightAuto = highlightAuto;
-  this.fixMarkup = fixMarkup;
-  this.highlightBlock = highlightBlock;
-  this.initHighlighting = initHighlighting;
-  this.initHighlightingOnLoad = initHighlightingOnLoad;
-
-  // Common regexps
-  this.IDENT_RE = '[a-zA-Z][a-zA-Z0-9_]*';
-  this.UNDERSCORE_IDENT_RE = '[a-zA-Z_][a-zA-Z0-9_]*';
-  this.NUMBER_RE = '\\b\\d+(\\.\\d+)?';
-  this.C_NUMBER_RE = '(\\b0[xX][a-fA-F0-9]+|(\\b\\d+(\\.\\d*)?|\\.\\d+)([eE][-+]?\\d+)?)'; // 0x..., 0..., decimal, float
-  this.BINARY_NUMBER_RE = '\\b(0b[01]+)'; // 0b...
-  this.RE_STARTERS_RE = '!|!=|!==|%|%=|&|&&|&=|\\*|\\*=|\\+|\\+=|,|\\.|-|-=|/|/=|:|;|<<|<<=|<=|<|===|==|=|>>>=|>>=|>=|>>>|>>|>|\\?|\\[|\\{|\\(|\\^|\\^=|\\||\\|=|\\|\\||~';
-
-  // Common modes
-  this.BACKSLASH_ESCAPE = {
-    begin: '\\\\[\\s\\S]', relevance: 0
-  };
-  this.APOS_STRING_MODE = {
-    className: 'string',
-    begin: '\'', end: '\'',
-    illegal: '\\n',
-    contains: [this.BACKSLASH_ESCAPE],
-    relevance: 0
-  };
-  this.QUOTE_STRING_MODE = {
-    className: 'string',
-    begin: '"', end: '"',
-    illegal: '\\n',
-    contains: [this.BACKSLASH_ESCAPE],
-    relevance: 0
-  };
-  this.C_LINE_COMMENT_MODE = {
-    className: 'comment',
-    begin: '//', end: '$'
-  };
-  this.C_BLOCK_COMMENT_MODE = {
-    className: 'comment',
-    begin: '/\\*', end: '\\*/'
-  };
-  this.HASH_COMMENT_MODE = {
-    className: 'comment',
-    begin: '#', end: '$'
-  };
-  this.NUMBER_MODE = {
-    className: 'number',
-    begin: this.NUMBER_RE,
-    relevance: 0
-  };
-  this.C_NUMBER_MODE = {
-    className: 'number',
-    begin: this.C_NUMBER_RE,
-    relevance: 0
-  };
-  this.BINARY_NUMBER_MODE = {
-    className: 'number',
-    begin: this.BINARY_NUMBER_RE,
-    relevance: 0
-  };
-  this.REGEXP_MODE = {
-    className: 'regexp',
-    begin: /\//, end: /\/[gim]*/,
-    illegal: /\n/,
-    contains: [
-      this.BACKSLASH_ESCAPE,
-      {
-        begin: /\[/, end: /\]/,
-        relevance: 0,
-        contains: [this.BACKSLASH_ESCAPE]
-      }
-    ]
-  };
-
-  // Utility functions
-  this.inherit = function(parent, obj) {
-    var result = {};
-    for (var key in parent)
-      result[key] = parent[key];
-    if (obj)
-      for (var key in obj)
-        result[key] = obj[key];
-    return result;
-  };
-}();
-hljs.LANGUAGES['bash'] = require('./bash.js')(hljs);
-hljs.LANGUAGES['erlang'] = require('./erlang.js')(hljs);
-hljs.LANGUAGES['cs'] = require('./cs.js')(hljs);
-hljs.LANGUAGES['brainfuck'] = require('./brainfuck.js')(hljs);
-hljs.LANGUAGES['ruby'] = require('./ruby.js')(hljs);
-hljs.LANGUAGES['rust'] = require('./rust.js')(hljs);
-hljs.LANGUAGES['ruleslanguage'] = require('./ruleslanguage.js')(hljs);
-hljs.LANGUAGES['rib'] = require('./rib.js')(hljs);
-hljs.LANGUAGES['diff'] = require('./diff.js')(hljs);
-hljs.LANGUAGES['haml'] = require('./haml.js')(hljs);
-hljs.LANGUAGES['javascript'] = require('./javascript.js')(hljs);
-hljs.LANGUAGES['glsl'] = require('./glsl.js')(hljs);
-hljs.LANGUAGES['rsl'] = require('./rsl.js')(hljs);
-hljs.LANGUAGES['lua'] = require('./lua.js')(hljs);
-hljs.LANGUAGES['xml'] = require('./xml.js')(hljs);
-hljs.LANGUAGES['markdown'] = require('./markdown.js')(hljs);
-hljs.LANGUAGES['css'] = require('./css.js')(hljs);
-hljs.LANGUAGES['lisp'] = require('./lisp.js')(hljs);
-hljs.LANGUAGES['profile'] = require('./profile.js')(hljs);
-hljs.LANGUAGES['http'] = require('./http.js')(hljs);
-hljs.LANGUAGES['java'] = require('./java.js')(hljs);
-hljs.LANGUAGES['fsharp'] = require('./fsharp.js')(hljs);
-hljs.LANGUAGES['php'] = require('./php.js')(hljs);
-hljs.LANGUAGES['haskell'] = require('./haskell.js')(hljs);
-hljs.LANGUAGES['1c'] = require('./1c.js')(hljs);
-hljs.LANGUAGES['python'] = require('./python.js')(hljs);
-hljs.LANGUAGES['smalltalk'] = require('./smalltalk.js')(hljs);
-hljs.LANGUAGES['tex'] = require('./tex.js')(hljs);
-hljs.LANGUAGES['actionscript'] = require('./actionscript.js')(hljs);
-hljs.LANGUAGES['sql'] = require('./sql.js')(hljs);
-hljs.LANGUAGES['handlebars'] = require('./handlebars.js')(hljs);
-hljs.LANGUAGES['vala'] = require('./vala.js')(hljs);
-hljs.LANGUAGES['ini'] = require('./ini.js')(hljs);
-hljs.LANGUAGES['livecodeserver'] = require('./livecodeserver.js')(hljs);
-hljs.LANGUAGES['d'] = require('./d.js')(hljs);
-hljs.LANGUAGES['vbnet'] = require('./vbnet.js')(hljs);
-hljs.LANGUAGES['axapta'] = require('./axapta.js')(hljs);
-hljs.LANGUAGES['perl'] = require('./perl.js')(hljs);
-hljs.LANGUAGES['scala'] = require('./scala.js')(hljs);
-hljs.LANGUAGES['cmake'] = require('./cmake.js')(hljs);
-hljs.LANGUAGES['ocaml'] = require('./ocaml.js')(hljs);
-hljs.LANGUAGES['objectivec'] = require('./objectivec.js')(hljs);
-hljs.LANGUAGES['avrasm'] = require('./avrasm.js')(hljs);
-hljs.LANGUAGES['vhdl'] = require('./vhdl.js')(hljs);
-hljs.LANGUAGES['coffeescript'] = require('./coffeescript.js')(hljs);
-hljs.LANGUAGES['mizar'] = require('./mizar.js')(hljs);
-hljs.LANGUAGES['nginx'] = require('./nginx.js')(hljs);
-hljs.LANGUAGES['erlang-repl'] = require('./erlang-repl.js')(hljs);
-hljs.LANGUAGES['r'] = require('./r.js')(hljs);
-hljs.LANGUAGES['json'] = require('./json.js')(hljs);
-hljs.LANGUAGES['django'] = require('./django.js')(hljs);
-hljs.LANGUAGES['delphi'] = require('./delphi.js')(hljs);
-hljs.LANGUAGES['vbscript'] = require('./vbscript.js')(hljs);
-hljs.LANGUAGES['mel'] = require('./mel.js')(hljs);
-hljs.LANGUAGES['dos'] = require('./dos.js')(hljs);
-hljs.LANGUAGES['apache'] = require('./apache.js')(hljs);
-hljs.LANGUAGES['scss'] = require('./scss.js')(hljs);
-hljs.LANGUAGES['applescript'] = require('./applescript.js')(hljs);
-hljs.LANGUAGES['lasso'] = require('./lasso.js')(hljs);
-hljs.LANGUAGES['cpp'] = require('./cpp.js')(hljs);
-hljs.LANGUAGES['matlab'] = require('./matlab.js')(hljs);
-hljs.LANGUAGES['scilab'] = require('./scilab.js')(hljs);
-hljs.LANGUAGES['makefile'] = require('./makefile.js')(hljs);
-hljs.LANGUAGES['asciidoc'] = require('./asciidoc.js')(hljs);
-hljs.LANGUAGES['parser3'] = require('./parser3.js')(hljs);
-hljs.LANGUAGES['clojure'] = require('./clojure.js')(hljs);
-hljs.LANGUAGES['go'] = require('./go.js')(hljs);
-module.exports = hljs;
-},{"./1c.js":9,"./actionscript.js":10,"./apache.js":11,"./applescript.js":12,"./asciidoc.js":13,"./avrasm.js":14,"./axapta.js":15,"./bash.js":16,"./brainfuck.js":17,"./clojure.js":18,"./cmake.js":19,"./coffeescript.js":20,"./cpp.js":21,"./cs.js":22,"./css.js":23,"./d.js":24,"./delphi.js":25,"./diff.js":26,"./django.js":27,"./dos.js":28,"./erlang-repl.js":29,"./erlang.js":30,"./fsharp.js":31,"./glsl.js":32,"./go.js":33,"./haml.js":34,"./handlebars.js":35,"./haskell.js":36,"./http.js":38,"./ini.js":39,"./java.js":40,"./javascript.js":41,"./json.js":42,"./lasso.js":43,"./lisp.js":44,"./livecodeserver.js":45,"./lua.js":46,"./makefile.js":47,"./markdown.js":48,"./matlab.js":49,"./mel.js":50,"./mizar.js":51,"./nginx.js":52,"./objectivec.js":53,"./ocaml.js":54,"./parser3.js":55,"./perl.js":56,"./php.js":57,"./profile.js":58,"./python.js":59,"./r.js":60,"./rib.js":61,"./rsl.js":62,"./ruby.js":63,"./ruleslanguage.js":64,"./rust.js":65,"./scala.js":66,"./scilab.js":67,"./scss.js":68,"./smalltalk.js":69,"./sql.js":70,"./tex.js":71,"./vala.js":72,"./vbnet.js":73,"./vbscript.js":74,"./vhdl.js":75,"./xml.js":76}],38:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     illegal: '\\S',
@@ -4819,11 +4899,11 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],39:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
-    illegal: '[^\\s]',
+    illegal: /\S/,
     contains: [
       {
         className: 'comment',
@@ -4849,14 +4929,16 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],40:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 module.exports = function(hljs) {
+  var KEYWORDS =
+    'false synchronized int abstract float private char boolean static null if const ' +
+    'for true while long throw strictfp finally protected import native final return void ' +
+    'enum else break transient new catch instanceof byte super volatile case assert short ' +
+    'package default double public try this switch continue throws';
   return {
-    keywords:
-      'false synchronized int abstract float private char boolean static null if const ' +
-      'for true while long throw strictfp finally protected import native final return void ' +
-      'enum else break transient new catch instanceof byte super volatile case assert short ' +
-      'package default double public try this switch continue throws',
+    keywords: KEYWORDS,
+    illegal: /<\//,
     contains: [
       {
         className: 'javadoc',
@@ -4871,20 +4953,26 @@ module.exports = function(hljs) {
       hljs.APOS_STRING_MODE,
       hljs.QUOTE_STRING_MODE,
       {
-        className: 'class',
-        beginWithKeyword: true, end: '{',
-        keywords: 'class interface',
-        excludeEnd: true,
-        illegal: ':',
+        beginKeywords: 'protected public private', end: /[{;=]/,
+        keywords: KEYWORDS,
         contains: [
           {
-            beginWithKeyword: true,
-            keywords: 'extends implements',
-            relevance: 10
+            className: 'class',
+            beginKeywords: 'class interface', endsWithParent: true,
+            illegal: /[:"<>]/,
+            contains: [
+              {
+                beginKeywords: 'extends implements',
+                relevance: 10
+              },
+              hljs.UNDERSCORE_TITLE_MODE
+            ]
           },
           {
-            className: 'title',
-            begin: hljs.UNDERSCORE_IDENT_RE
+            begin: hljs.UNDERSCORE_IDENT_RE + '\\s*\\(', returnBegin: true,
+            contains: [
+              hljs.UNDERSCORE_TITLE_MODE
+            ]
           }
         ]
       },
@@ -4895,18 +4983,31 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],41:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
+    aliases: ['js'],
     keywords: {
       keyword:
         'in if for while finally var new function do return void else break catch ' +
         'instanceof with throw case default try this switch continue typeof delete ' +
-        'let yield const',
+        'let yield const class',
       literal:
-        'true false null undefined NaN Infinity'
+        'true false null undefined NaN Infinity',
+      built_in:
+        'eval isFinite isNaN parseFloat parseInt decodeURI decodeURIComponent ' +
+        'encodeURI encodeURIComponent escape unescape Object Function Boolean Error ' +
+        'EvalError InternalError RangeError ReferenceError StopIteration SyntaxError ' +
+        'TypeError URIError Number Math Date String RegExp Array Float32Array ' +
+        'Float64Array Int16Array Int32Array Int8Array Uint16Array Uint32Array ' +
+        'Uint8Array Uint8ClampedArray ArrayBuffer DataView JSON Intl arguments require'
     },
     contains: [
+      {
+        className: 'pi',
+        begin: /^\s*('|")use strict('|")/,
+        relevance: 10
+      },
       hljs.APOS_STRING_MODE,
       hljs.QUOTE_STRING_MODE,
       hljs.C_LINE_COMMENT_MODE,
@@ -4921,6 +5022,7 @@ module.exports = function(hljs) {
           hljs.REGEXP_MODE,
           { // E4X
             begin: /</, end: />;/,
+            relevance: 0,
             subLanguage: 'xml'
           }
         ],
@@ -4928,12 +5030,9 @@ module.exports = function(hljs) {
       },
       {
         className: 'function',
-        beginWithKeyword: true, end: /{/,
-        keywords: 'function',
+        beginKeywords: 'function', end: /\{/,
         contains: [
-          {
-            className: 'title', begin: /[A-Za-z$_][0-9A-Za-z$_]*/
-          },
+          hljs.inherit(hljs.TITLE_MODE, {begin: /[A-Za-z$_][0-9A-Za-z$_]*/}),
           {
             className: 'params',
             begin: /\(/, end: /\)/,
@@ -4945,11 +5044,17 @@ module.exports = function(hljs) {
           }
         ],
         illegal: /\[|%/
+      },
+      {
+        begin: /\$[(.]/ // relevance booster for a pattern common to JS libs: `$(something)` and `$.something`
+      },
+      {
+        begin: '\\.' + hljs.IDENT_RE, relevance: 0 // hack: prevents detection of keywords after dots
       }
     ]
   };
 };
-},{}],42:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 module.exports = function(hljs) {
   var LITERALS = {literal: 'true false null'};
   var TYPES = [
@@ -4987,7 +5092,7 @@ module.exports = function(hljs) {
     illegal: '\\S'
   };
 };
-},{}],43:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 module.exports = function(hljs) {
   var LASSO_IDENT_RE = '[a-zA-Z_][a-zA-Z0-9_.]*';
   var LASSO_ANGLE_RE = '<\\?(lasso(script)?|=)';
@@ -5059,12 +5164,15 @@ module.exports = function(hljs) {
     },
     {
       className: 'variable',
-      begin: '[#$]' + LASSO_IDENT_RE
-    },
-    {
-      className: 'variable',
-      begin: '#', end: '\\d+',
-      illegal: '\\W'
+      variants: [
+        {
+          begin: '[#$]' + LASSO_IDENT_RE
+        },
+        {
+          begin: '#', end: '\\d+',
+          illegal: '\\W'
+        }
+      ]
     },
     {
       className: 'tag',
@@ -5077,13 +5185,16 @@ module.exports = function(hljs) {
     },
     {
       className: 'subst',
-      begin: '->\\s*',
-      contains: [ LASSO_DATAMEMBER ]
-    },
-    {
-      className: 'subst',
-      begin: ':=|[-+*/%=<>&|!?\\\\]+',
-      relevance: 0
+      variants: [
+        {
+          begin: '->\\s*',
+          contains: [ LASSO_DATAMEMBER ]
+        },
+        {
+          begin: ':=|/(?!\\w)=?|[-+*%=<>&|!?\\\\]+',
+          relevance: 0
+        }
+      ]
     },
     {
       className: 'built_in',
@@ -5093,19 +5204,17 @@ module.exports = function(hljs) {
     },
     {
       className: 'class',
-      beginWithKeyword: true, keywords: 'define',
+      beginKeywords: 'define',
       returnEnd: true, end: '\\(|=>',
       contains: [
-        {
-          className: 'title',
-          begin: hljs.UNDERSCORE_IDENT_RE + '(=(?!>))?'
-        }
+        hljs.inherit(hljs.TITLE_MODE, {begin: hljs.UNDERSCORE_IDENT_RE + '(=(?!>))?'})
       ]
     }
   ];
   return {
+    aliases: ['ls', 'lassoscript'],
     case_insensitive: true,
-    lexems: LASSO_IDENT_RE + '|&[lg]t;',
+    lexemes: LASSO_IDENT_RE + '|&[lg]t;',
     keywords: LASSO_KEYWORDS,
     contains: [
       {
@@ -5116,6 +5225,7 @@ module.exports = function(hljs) {
           className: 'markup',
           end: '\\[|' + LASSO_ANGLE_RE,
           returnEnd: true,
+          relevance: 0,
           contains: [ HTML_COMMENT ]
         }
       },
@@ -5126,7 +5236,7 @@ module.exports = function(hljs) {
         begin: '\\[no_square_brackets',
         starts: {
           end: '\\[/no_square_brackets\\]', // not implemented in the language
-          lexems: LASSO_IDENT_RE + '|&[lg]t;',
+          lexemes: LASSO_IDENT_RE + '|&[lg]t;',
           keywords: LASSO_KEYWORDS,
           contains: [
             {
@@ -5158,7 +5268,7 @@ module.exports = function(hljs) {
     ].concat(LASSO_CODE)
   };
 };
-},{}],44:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 module.exports = function(hljs) {
   var LISP_IDENT_RE = '[a-zA-Z_\\-\\+\\*\\/\\<\\=\\>\\&\\#][a-zA-Z0-9_\\-\\+\\*\\/\\<\\=\\>\\&\\#!]*';
   var LISP_SIMPLE_NUMBER_RE = '(\\-|\\+)?\\d+(\\.\\d+|\\/\\d+)?((d|e|f|l|s)(\\+|\\-)?\\d+)?';
@@ -5170,29 +5280,17 @@ module.exports = function(hljs) {
     className: 'literal',
     begin: '\\b(t{1}|nil)\\b'
   };
-  var NUMBERS = [
-    {
-      className: 'number', begin: LISP_SIMPLE_NUMBER_RE, relevance: 0
-    },
-    {
-      className: 'number', begin: '#b[0-1]+(/[0-1]+)?'
-    },
-    {
-      className: 'number', begin: '#o[0-7]+(/[0-7]+)?'
-    },
-    {
-      className: 'number', begin: '#x[0-9a-f]+(/[0-9a-f]+)?'
-    },
-    {
-      className: 'number', begin: '#c\\(' + LISP_SIMPLE_NUMBER_RE + ' +' + LISP_SIMPLE_NUMBER_RE, end: '\\)'
-    }
-  ]
-  var STRING = {
-    className: 'string',
-    begin: '"', end: '"',
-    contains: [hljs.BACKSLASH_ESCAPE],
-    relevance: 0
+  var NUMBER = {
+    className: 'number',
+    variants: [
+      {begin: LISP_SIMPLE_NUMBER_RE, relevance: 0},
+      {begin: '#b[0-1]+(/[0-1]+)?'},
+      {begin: '#o[0-7]+(/[0-7]+)?'},
+      {begin: '#x[0-9a-f]+(/[0-9a-f]+)?'},
+      {begin: '#c\\(' + LISP_SIMPLE_NUMBER_RE + ' +' + LISP_SIMPLE_NUMBER_RE, end: '\\)'}
+    ]
   };
+  var STRING = hljs.inherit(hljs.QUOTE_STRING_MODE, {illegal: null});
   var COMMENT = {
     className: 'comment',
     begin: ';', end: '$'
@@ -5207,18 +5305,20 @@ module.exports = function(hljs) {
   };
   var QUOTED_LIST = {
     begin: '\\(', end: '\\)',
-    contains: ['self', LITERAL, STRING].concat(NUMBERS)
+    contains: ['self', LITERAL, STRING, NUMBER]
   };
-  var QUOTED1 = {
+  var QUOTED = {
     className: 'quoted',
-    begin: '[\'`]\\(', end: '\\)',
-    contains: NUMBERS.concat([STRING, VARIABLE, KEYWORD, QUOTED_LIST])
-  };
-  var QUOTED2 = {
-    className: 'quoted',
-    begin: '\\(quote ', end: '\\)',
-    keywords: {title: 'quote'},
-    contains: NUMBERS.concat([STRING, VARIABLE, KEYWORD, QUOTED_LIST])
+    contains: [NUMBER, STRING, VARIABLE, KEYWORD, QUOTED_LIST],
+    variants: [
+      {
+        begin: '[\'`]\\(', end: '\\)',
+      },
+      {
+        begin: '\\(quote ', end: '\\)',
+        keywords: {title: 'quote'},
+      }
+    ]
   };
   var LIST = {
     className: 'list',
@@ -5229,196 +5329,191 @@ module.exports = function(hljs) {
     relevance: 0
   };
   LIST.contains = [{className: 'title', begin: LISP_IDENT_RE}, BODY];
-  BODY.contains = [QUOTED1, QUOTED2, LIST, LITERAL].concat(NUMBERS).concat([STRING, COMMENT, VARIABLE, KEYWORD]);
+  BODY.contains = [QUOTED, LIST, LITERAL, NUMBER, STRING, COMMENT, VARIABLE, KEYWORD];
 
   return {
     illegal: /\S/,
-    contains: NUMBERS.concat([
+    contains: [
+      NUMBER,
       SHEBANG,
       LITERAL,
       STRING,
       COMMENT,
-      QUOTED1, QUOTED2,
+      QUOTED,
       LIST
-    ])
+    ]
   };
 };
-},{}],45:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 module.exports = function(hljs) {
   var VARIABLE = {
-	className: 'variable', begin: '\\b[gtps][A-Z]+[A-Za-z0-9_\\-]*\\b|\\$_[A-Z]+',
-	relevance: 0
+    className: 'variable', begin: '\\b[gtps][A-Z]+[A-Za-z0-9_\\-]*\\b|\\$_[A-Z]+',
+    relevance: 0
   };
-  var STRINGS = [
-    hljs.inherit(hljs.APOS_STRING_MODE),
-    hljs.inherit(hljs.QUOTE_STRING_MODE)
-  ];
-  var COMMENTS = [
-	hljs.inherit(hljs.C_BLOCK_COMMENT_MODE),
-	{
-		className: 'comment',
-		begin: '--', end: '$'
-	},
-	{
-		className: 'comment',
-		begin: '[^:]//', end: '\\n'
-	},
-	{
-		className: 'comment',
-		begin: '#', end: '\\n'
-	}
-  ];
-  var NUMBERS = [hljs.BINARY_NUMBER_MODE, hljs.C_NUMBER_MODE];
-  var TITLE = [
-	{
-      className: 'title', begin: '\\b_*rig[A-Z]+[A-Za-z0-9_\\-]*'
-	},
-	{
-	  className: 'title', begin: '\\b_[a-z0-9\\-]+'
-    }
-  ];
+  var COMMENT = {
+    className: 'comment', end: '$',
+    variants: [
+      hljs.C_BLOCK_COMMENT_MODE,
+      hljs.HASH_COMMENT_MODE,
+      {
+        begin: '--',
+      },
+      {
+        begin: '[^:]//',
+      }
+    ]
+  };
+  var TITLE1 = hljs.inherit(hljs.TITLE_MODE, {
+    variants: [
+      {begin: '\\b_*rig[A-Z]+[A-Za-z0-9_\\-]*'},
+      {begin: '\\b_[a-z0-9\\-]+'}
+    ]
+  });
+  var TITLE2 = hljs.inherit(hljs.TITLE_MODE, {begin: '\\b([A-Za-z0-9_\\-]+)\\b'});
   return {
     case_insensitive: false,
-	keywords: {
+    keywords: {
       keyword:
-      	'after byte bytes english the until http forever descending using line real8 with seventh ' +
-		'for stdout finally element word fourth before black ninth sixth characters chars stderr ' +
-		'uInt1 uInt1s uInt2 uInt2s stdin string lines relative rel any fifth items from middle mid ' +
-		'at else of catch then third it file milliseconds seconds second secs sec int1 int1s int4 ' +
-		'int4s internet int2 int2s normal text item last long detailed effective uInt4 uInt4s repeat ' +
-		'end repeat URL in try into switch to words https token binfile each tenth as ticks tick ' +
-		'system real4 by dateItems without char character ascending eighth whole dateTime numeric short ' +
-		'first ftp integer abbreviated abbr abbrev private case while if',
-	  constant:
-		'SIX TEN FORMFEED NINE ZERO NONE SPACE FOUR FALSE COLON CRLF PI COMMA ENDOFFILE EOF EIGHT FIVE ' +
-		'QUOTE EMPTY ONE TRUE RETURN CR LINEFEED RIGHT BACKSLASH NULL SEVEN TAB THREE TWO ' +
-		'six ten formfeed nine zero none space four false colon crlf pi comma endoffile eof eight five ' +
-		'quote empty one true return cr linefeed right backslash null seven tab three two ' +
-		'RIVERSION RISTATE FILE_READ_MODE FILE_WRITE_MODE FILE_WRITE_MODE DIR_WRITE_MODE FILE_READ_UMASK ' +
-		'FILE_WRITE_UMASK DIR_READ_UMASK DIR_WRITE_UMASK',
-	  operator:
-		'div mod wrap and or bitAnd bitNot bitOr bitXor among not in a an within ' +
-		'contains ends with begins the keys of keys',
-	  built_in:
-		'put abs acos aliasReference annuity arrayDecode arrayEncode asin atan atan2 average avg base64Decode ' +
-		'base64Encode baseConvert binaryDecode binaryEncode byteToNum cachedURL cachedURLs charToNum ' +
-		'cipherNames commandNames compound compress constantNames cos date dateFormat decompress directories ' +
-		'diskSpace DNSServers exp exp1 exp2 exp10 extents files flushEvents folders format functionNames global ' +
-		'globals hasMemory hostAddress hostAddressToName hostName hostNameToAddress isNumber ISOToMac itemOffset ' +
-		'keys len length libURLErrorData libUrlFormData libURLftpCommand libURLLastHTTPHeaders libURLLastRHHeaders ' +
-		'libUrlMultipartFormAddPart libUrlMultipartFormData libURLVersion lineOffset ln ln1 localNames log log2 log10 ' +
-		'longFilePath lower macToISO matchChunk matchText matrixMultiply max md5Digest median merge millisec ' +
-		'millisecs millisecond milliseconds min monthNames num number numToByte numToChar offset open openfiles ' +
-		'openProcesses openProcessIDs openSockets paramCount param params peerAddress pendingMessages platform ' +
-		'processID random randomBytes replaceText result revCreateXMLTree revCreateXMLTreeFromFile revCurrentRecord ' +
-		'revCurrentRecordIsFirst revCurrentRecordIsLast revDatabaseColumnCount revDatabaseColumnIsNull ' +
-		'revDatabaseColumnLengths revDatabaseColumnNames revDatabaseColumnNamed revDatabaseColumnNumbered ' +
-		'revDatabaseColumnTypes revDatabaseConnectResult revDatabaseCursors revDatabaseID revDatabaseTableNames ' +
-		'revDatabaseType revDataFromQuery revdb_closeCursor revdb_columnbynumber revdb_columncount revdb_columnisnull ' +
-		'revdb_columnlengths revdb_columnnames revdb_columntypes revdb_commit revdb_connect revdb_connections ' +
-		'revdb_connectionerr revdb_currentrecord revdb_cursorconnection revdb_cursorerr revdb_cursors revdb_dbtype ' +
-		'revdb_disconnect revdb_execute revdb_iseof revdb_isbof revdb_movefirst revdb_movelast revdb_movenext ' +
-		'revdb_moveprev revdb_query revdb_querylist revdb_recordcount revdb_rollback revdb_tablenames ' +
-		'revGetDatabaseDriverPath revNumberOfRecords revOpenDatabase revOpenDatabases revQueryDatabase ' +
-		'revQueryDatabaseBlob revQueryResult revQueryIsAtStart revQueryIsAtEnd revUnixFromMacPath ' +
-		'revXMLAttribute revXMLAttributes revXMLAttributeValues revXMLChildContents revXMLChildNames ' +
-		'revXMLFirstChild revXMLMatchingNode revXMLNextSibling revXMLNodeContents revXMLNumberOfChildren ' +
-		'revXMLParent revXMLPreviousSibling revXMLRootNode revXMLRPC_CreateRequest revXMLRPC_Documents ' +
-		'revXMLRPC_Error revXMLRPC_Execute revXMLRPC_GetHost revXMLRPC_GetMethod revXMLRPC_GetParam revXMLText ' +
-		'revXMLRPC_GetParamCount revXMLRPC_GetParamNode revXMLRPC_GetParamType revXMLRPC_GetPath revXMLRPC_GetPort ' +
-		'revXMLRPC_GetProtocol revXMLRPC_GetRequest revXMLRPC_GetResponse revXMLRPC_GetSocket revXMLTree ' +
-		'revXMLTrees revXMLValidateDTD revZipDescribeItem revZipEnumerateItems revZipOpenArchives round ' +
-		'sec secs seconds sha1Digest shell shortFilePath sin specialFolderPath sqrt standardDeviation statRound ' +
-		'stdDev sum sysError systemVersion tan tempName tick ticks time to toLower toUpper transpose trunc ' +
-		'uniDecode uniEncode upper URLDecode URLEncode URLStatus value variableNames version waitDepth weekdayNames wordOffset ' +
-		'add breakpoint cancel clear local variable file word line folder directory URL close socket process ' +
-		'combine constant convert create new alias folder directory decrypt delete variable word line folder ' +
-		'directory URL dispatch divide do encrypt filter get include intersect kill libURLDownloadToFile ' +
-		'libURLFollowHttpRedirects libURLftpUpload libURLftpUploadFile libURLresetAll libUrlSetAuthCallback ' +
-		'libURLSetCustomHTTPHeaders libUrlSetExpect100 libURLSetFTPListCommand libURLSetFTPMode libURLSetFTPStopTime ' +
-		'libURLSetStatusCallback load multiply socket process post seek rel relative read from process rename ' +
-		'replace require resetAll revAddXMLNode revAppendXML revCloseCursor revCloseDatabase revCommitDatabase ' +
-		'revCopyFile revCopyFolder revCopyXMLNode revDeleteFolder revDeleteXMLNode revDeleteAllXMLTrees ' +
-		'revDeleteXMLTree revExecuteSQL revGoURL revInsertXMLNode revMoveFolder revMoveToFirstRecord revMoveToLastRecord ' +
-		'revMoveToNextRecord revMoveToPreviousRecord revMoveToRecord revMoveXMLNode revPutIntoXMLNode revRollBackDatabase ' +
-		'revSetDatabaseDriverPath revSetXMLAttribute revXMLRPC_AddParam revXMLRPC_DeleteAllDocuments revXMLAddDTD ' +
-		'revXMLRPC_Free revXMLRPC_FreeAll revXMLRPC_DeleteDocument revXMLRPC_DeleteParam revXMLRPC_SetHost ' +
-		'revXMLRPC_SetMethod revXMLRPC_SetPort revXMLRPC_SetProtocol revXMLRPC_SetSocket revZipAddItemWithData ' +
-		'revZipAddItemWithFile revZipAddUncompressedItemWithData revZipAddUncompressedItemWithFile revZipCancel ' +
-		'revZipCloseArchive revZipDeleteItem revZipExtractItemToFile revZipExtractItemToVariable revZipSetProgressCallback ' +
-		'revZipRenameItem revZipReplaceItemWithData revZipReplaceItemWithFile revZipOpenArchive send set sort split ' +
-		'subtract union unload wait write'
-	},
-	 contains: [
-	  VARIABLE,
-	  {
-	 	className: 'keyword',
-	    begin: '\\bend\\sif\\b'
-	  },
-	  {
-	 	className: 'function',
-	    beginWithKeyword: true, end: '$',
-	    keywords: 'function',
-	    contains: [
-		  VARIABLE,
-		  {
-		  	className: 'title',
-		  	begin: '\\b([A-Za-z0-9_\\-]+)\\b'
-		  }
-		].concat(STRINGS).concat(NUMBERS).concat(TITLE)
-	  },
-	  {
-	 	className: 'function',
-	    beginWithKeyword: true, end: '$',
-	    keywords: 'end',
-	    contains: [
-		  {
-		  	className: 'title',
-		  	begin: '\\b([A-Za-z0-9_\\-]+)\\b'
-		  }
-		].concat(TITLE)
-	  },
-	  {
-	 	className: 'command',
-	    beginWithKeyword: true, end: '$',
-	    keywords: 'command on',
-	    contains: [
-		  VARIABLE,
-		  {
-		  	className: 'title',
-		  	begin: '\\b([A-Za-z0-9_\\-]+)\\b'
-		  }
-		].concat(STRINGS).concat(NUMBERS).concat(TITLE)
-	  },
-	  {
-	 	className: 'command',
-	    beginWithKeyword: true, end: '$',
-	    keywords: 'end',
-	    contains: [
-		  {
-		  	className: 'title',
-		  	begin: '\\b([A-Za-z0-9_\\-]+)\\b'
-		  }
-		].concat(TITLE)
-	  },
-	  {
-		className: 'preprocessor',
-		begin: '<\\?rev|<\\?lc|<\\?livecode',
-	    relevance: 10
-	  },
-	  {
-		className: 'preprocessor',
-		begin: '<\\?'
-	  },
-	  {
-		className: 'preprocessor',
-	    begin: '\\?>'
-	  }
-	].concat(COMMENTS).concat(STRINGS).concat(NUMBERS).concat(TITLE),
-	illegal: ';$|^\\[|^='
+        'after byte bytes english the until http forever descending using line real8 with seventh ' +
+        'for stdout finally element word fourth before black ninth sixth characters chars stderr ' +
+        'uInt1 uInt1s uInt2 uInt2s stdin string lines relative rel any fifth items from middle mid ' +
+        'at else of catch then third it file milliseconds seconds second secs sec int1 int1s int4 ' +
+        'int4s internet int2 int2s normal text item last long detailed effective uInt4 uInt4s repeat ' +
+        'end repeat URL in try into switch to words https token binfile each tenth as ticks tick ' +
+        'system real4 by dateItems without char character ascending eighth whole dateTime numeric short ' +
+        'first ftp integer abbreviated abbr abbrev private case while if',
+      constant:
+        'SIX TEN FORMFEED NINE ZERO NONE SPACE FOUR FALSE COLON CRLF PI COMMA ENDOFFILE EOF EIGHT FIVE ' +
+        'QUOTE EMPTY ONE TRUE RETURN CR LINEFEED RIGHT BACKSLASH NULL SEVEN TAB THREE TWO ' +
+        'six ten formfeed nine zero none space four false colon crlf pi comma endoffile eof eight five ' +
+        'quote empty one true return cr linefeed right backslash null seven tab three two ' +
+        'RIVERSION RISTATE FILE_READ_MODE FILE_WRITE_MODE FILE_WRITE_MODE DIR_WRITE_MODE FILE_READ_UMASK ' +
+        'FILE_WRITE_UMASK DIR_READ_UMASK DIR_WRITE_UMASK',
+      operator:
+        'div mod wrap and or bitAnd bitNot bitOr bitXor among not in a an within ' +
+        'contains ends with begins the keys of keys',
+      built_in:
+        'put abs acos aliasReference annuity arrayDecode arrayEncode asin atan atan2 average avg base64Decode ' +
+        'base64Encode baseConvert binaryDecode binaryEncode byteToNum cachedURL cachedURLs charToNum ' +
+        'cipherNames commandNames compound compress constantNames cos date dateFormat decompress directories ' +
+        'diskSpace DNSServers exp exp1 exp2 exp10 extents files flushEvents folders format functionNames global ' +
+        'globals hasMemory hostAddress hostAddressToName hostName hostNameToAddress isNumber ISOToMac itemOffset ' +
+        'keys len length libURLErrorData libUrlFormData libURLftpCommand libURLLastHTTPHeaders libURLLastRHHeaders ' +
+        'libUrlMultipartFormAddPart libUrlMultipartFormData libURLVersion lineOffset ln ln1 localNames log log2 log10 ' +
+        'longFilePath lower macToISO matchChunk matchText matrixMultiply max md5Digest median merge millisec ' +
+        'millisecs millisecond milliseconds min monthNames num number numToByte numToChar offset open openfiles ' +
+        'openProcesses openProcessIDs openSockets paramCount param params peerAddress pendingMessages platform ' +
+        'processID random randomBytes replaceText result revCreateXMLTree revCreateXMLTreeFromFile revCurrentRecord ' +
+        'revCurrentRecordIsFirst revCurrentRecordIsLast revDatabaseColumnCount revDatabaseColumnIsNull ' +
+        'revDatabaseColumnLengths revDatabaseColumnNames revDatabaseColumnNamed revDatabaseColumnNumbered ' +
+        'revDatabaseColumnTypes revDatabaseConnectResult revDatabaseCursors revDatabaseID revDatabaseTableNames ' +
+        'revDatabaseType revDataFromQuery revdb_closeCursor revdb_columnbynumber revdb_columncount revdb_columnisnull ' +
+        'revdb_columnlengths revdb_columnnames revdb_columntypes revdb_commit revdb_connect revdb_connections ' +
+        'revdb_connectionerr revdb_currentrecord revdb_cursorconnection revdb_cursorerr revdb_cursors revdb_dbtype ' +
+        'revdb_disconnect revdb_execute revdb_iseof revdb_isbof revdb_movefirst revdb_movelast revdb_movenext ' +
+        'revdb_moveprev revdb_query revdb_querylist revdb_recordcount revdb_rollback revdb_tablenames ' +
+        'revGetDatabaseDriverPath revNumberOfRecords revOpenDatabase revOpenDatabases revQueryDatabase ' +
+        'revQueryDatabaseBlob revQueryResult revQueryIsAtStart revQueryIsAtEnd revUnixFromMacPath ' +
+        'revXMLAttribute revXMLAttributes revXMLAttributeValues revXMLChildContents revXMLChildNames ' +
+        'revXMLFirstChild revXMLMatchingNode revXMLNextSibling revXMLNodeContents revXMLNumberOfChildren ' +
+        'revXMLParent revXMLPreviousSibling revXMLRootNode revXMLRPC_CreateRequest revXMLRPC_Documents ' +
+        'revXMLRPC_Error revXMLRPC_Execute revXMLRPC_GetHost revXMLRPC_GetMethod revXMLRPC_GetParam revXMLText ' +
+        'revXMLRPC_GetParamCount revXMLRPC_GetParamNode revXMLRPC_GetParamType revXMLRPC_GetPath revXMLRPC_GetPort ' +
+        'revXMLRPC_GetProtocol revXMLRPC_GetRequest revXMLRPC_GetResponse revXMLRPC_GetSocket revXMLTree ' +
+        'revXMLTrees revXMLValidateDTD revZipDescribeItem revZipEnumerateItems revZipOpenArchives round ' +
+        'sec secs seconds sha1Digest shell shortFilePath sin specialFolderPath sqrt standardDeviation statRound ' +
+        'stdDev sum sysError systemVersion tan tempName tick ticks time to toLower toUpper transpose trunc ' +
+        'uniDecode uniEncode upper URLDecode URLEncode URLStatus value variableNames version waitDepth weekdayNames wordOffset ' +
+        'add breakpoint cancel clear local variable file word line folder directory URL close socket process ' +
+        'combine constant convert create new alias folder directory decrypt delete variable word line folder ' +
+        'directory URL dispatch divide do encrypt filter get include intersect kill libURLDownloadToFile ' +
+        'libURLFollowHttpRedirects libURLftpUpload libURLftpUploadFile libURLresetAll libUrlSetAuthCallback ' +
+        'libURLSetCustomHTTPHeaders libUrlSetExpect100 libURLSetFTPListCommand libURLSetFTPMode libURLSetFTPStopTime ' +
+        'libURLSetStatusCallback load multiply socket process post seek rel relative read from process rename ' +
+        'replace require resetAll revAddXMLNode revAppendXML revCloseCursor revCloseDatabase revCommitDatabase ' +
+        'revCopyFile revCopyFolder revCopyXMLNode revDeleteFolder revDeleteXMLNode revDeleteAllXMLTrees ' +
+        'revDeleteXMLTree revExecuteSQL revGoURL revInsertXMLNode revMoveFolder revMoveToFirstRecord revMoveToLastRecord ' +
+        'revMoveToNextRecord revMoveToPreviousRecord revMoveToRecord revMoveXMLNode revPutIntoXMLNode revRollBackDatabase ' +
+        'revSetDatabaseDriverPath revSetXMLAttribute revXMLRPC_AddParam revXMLRPC_DeleteAllDocuments revXMLAddDTD ' +
+        'revXMLRPC_Free revXMLRPC_FreeAll revXMLRPC_DeleteDocument revXMLRPC_DeleteParam revXMLRPC_SetHost ' +
+        'revXMLRPC_SetMethod revXMLRPC_SetPort revXMLRPC_SetProtocol revXMLRPC_SetSocket revZipAddItemWithData ' +
+        'revZipAddItemWithFile revZipAddUncompressedItemWithData revZipAddUncompressedItemWithFile revZipCancel ' +
+        'revZipCloseArchive revZipDeleteItem revZipExtractItemToFile revZipExtractItemToVariable revZipSetProgressCallback ' +
+        'revZipRenameItem revZipReplaceItemWithData revZipReplaceItemWithFile revZipOpenArchive send set sort split ' +
+        'subtract union unload wait write'
+    },
+    contains: [
+      VARIABLE,
+      {
+        className: 'keyword',
+        begin: '\\bend\\sif\\b'
+      },
+      {
+        className: 'function',
+        beginKeywords: 'function', end: '$',
+        contains: [
+          VARIABLE,
+          TITLE2,
+          hljs.APOS_STRING_MODE,
+          hljs.QUOTE_STRING_MODE,
+          hljs.BINARY_NUMBER_MODE,
+          hljs.C_NUMBER_MODE,
+          TITLE1
+        ]
+      },
+      {
+        className: 'function',
+        beginKeywords: 'end', end: '$',
+        contains: [
+          TITLE2,
+          TITLE1
+        ]
+      },
+      {
+        className: 'command',
+        beginKeywords: 'command on', end: '$',
+        contains: [
+          VARIABLE,
+          TITLE2,
+          hljs.APOS_STRING_MODE,
+          hljs.QUOTE_STRING_MODE,
+          hljs.BINARY_NUMBER_MODE,
+          hljs.C_NUMBER_MODE,
+          TITLE1
+        ]
+      },
+      {
+        className: 'command',
+        beginKeywords: 'end', end: '$',
+        contains: [
+          TITLE2,
+          TITLE1
+        ]
+      },
+      {
+        className: 'preprocessor',
+        begin: '<\\?rev|<\\?lc|<\\?livecode',
+        relevance: 10
+      },
+      {
+        className: 'preprocessor',
+        begin: '<\\?'
+      },
+      {
+        className: 'preprocessor',
+        begin: '\\?>'
+      },
+      COMMENT,
+      hljs.APOS_STRING_MODE,
+      hljs.QUOTE_STRING_MODE,
+      hljs.BINARY_NUMBER_MODE,
+      hljs.C_NUMBER_MODE,
+      TITLE1
+    ],
+    illegal: ';$|^\\[|^='
   };
 };
-},{}],46:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 module.exports = function(hljs) {
   var OPENING_LONG_BRACKET = '\\[=*\\[';
   var CLOSING_LONG_BRACKET = '\\]=*\\]';
@@ -5439,7 +5534,7 @@ module.exports = function(hljs) {
     }
   ]
   return {
-    lexems: hljs.UNDERSCORE_IDENT_RE,
+    lexemes: hljs.UNDERSCORE_IDENT_RE,
     keywords: {
       keyword:
         'and break do else elseif end false for if in local nil not or repeat return then ' +
@@ -5453,13 +5548,9 @@ module.exports = function(hljs) {
     contains: COMMENTS.concat([
       {
         className: 'function',
-        beginWithKeyword: true, end: '\\)',
-        keywords: 'function',
+        beginKeywords: 'function', end: '\\)',
         contains: [
-          {
-            className: 'title',
-            begin: '([_a-zA-Z]\\w*\\.)*([_a-zA-Z]\\w*:)?[_a-zA-Z]\\w*'
-          },
+          hljs.inherit(hljs.TITLE_MODE, {begin: '([_a-zA-Z]\\w*\\.)*([_a-zA-Z]\\w*:)?[_a-zA-Z]\\w*'}),
           {
             className: 'params',
             begin: '\\(', endsWithParent: true,
@@ -5479,12 +5570,12 @@ module.exports = function(hljs) {
     ])
   };
 };
-},{}],47:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 module.exports = function(hljs) {
   var VARIABLE = {
     className: 'variable',
     begin: /\$\(/, end: /\)/,
-    contains: hljs.BACKSLASH_ESCAPE
+    contains: [hljs.BACKSLASH_ESCAPE]
   }
   return {
     contains: [
@@ -5511,7 +5602,7 @@ module.exports = function(hljs) {
       {
         className: 'phony',
         begin: /^\.PHONY:/, end: /$/,
-        keywords: '.PHONY', lexems: /[\.\w]+/
+        keywords: '.PHONY', lexemes: /[\.\w]+/
       },
       {
         begin: /^\t+/, end: /$/,
@@ -5523,18 +5614,17 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],48:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
       // highlight headers
       {
         className: 'header',
-        begin: '^#{1,3}', end: '$'
-      },
-      {
-        className: 'header',
-        begin: '^.+?\\n[=-]{2,}$'
+        variants: [
+          { begin: '^#{1,6}', end: '$' },
+          { begin: '^.+?\\n[=-]{2,}$' }
+        ]
       },
       // inline html
       {
@@ -5555,12 +5645,12 @@ module.exports = function(hljs) {
       // emphasis segments
       {
         className: 'emphasis',
-        begin: '\\*.+?\\*'
-      },
-      {
-        className: 'emphasis',
-        begin: '_.+?_',
-        relevance: 0
+        variants: [
+          { begin: '\\*.+?\\*' },
+          { begin: '_.+?_'
+          , relevance: 0
+          }
+        ]
       },
       // blockquotes
       {
@@ -5570,38 +5660,121 @@ module.exports = function(hljs) {
       // code snippets
       {
         className: 'code',
-        begin: '`.+?`'
-      },
-      {
-        className: 'code',
-        begin: '^    ', end: '$',
-        relevance: 0
+        variants: [
+          { begin: '`.+?`' },
+          { begin: '^( {4}|\t)', end: '$'
+          , relevance: 0
+          }
+        ]
       },
       // horizontal rules
       {
         className: 'horizontal_rule',
-        begin: '^-{3,}', end: '$'
+        begin: '^[-\\*]{3,}', end: '$'
       },
       // using links - title and link
       {
-        begin: '\\[.+?\\]\\(.+?\\)',
+        begin: '\\[.+?\\][\\(\\[].+?[\\)\\]]',
         returnBegin: true,
         contains: [
           {
             className: 'link_label',
-            begin: '\\[.+\\]'
+            begin: '\\[', end: '\\]',
+            excludeBegin: true,
+            returnEnd: true,
+            relevance: 0
           },
           {
             className: 'link_url',
-            begin: '\\(', end: '\\)',
+            begin: '\\]\\(', end: '\\)',
             excludeBegin: true, excludeEnd: true
+          },
+          {
+            className: 'link_reference',
+            begin: '\\]\\[', end: '\\]',
+            excludeBegin: true, excludeEnd: true,
+          }
+        ],
+        relevance: 10
+      },
+      {
+        begin: '^\\[\.+\\]:', end: '$',
+        returnBegin: true,
+        contains: [
+          {
+            className: 'link_reference',
+            begin: '\\[', end: '\\]',
+            excludeBegin: true, excludeEnd: true
+          },
+          {
+            className: 'link_url',
+            begin: '\\s', end: '$'
           }
         ]
       }
     ]
   };
 };
-},{}],49:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
+module.exports = function(hljs) {
+  return {
+    aliases: ['mma'],
+    lexemes: '(\\$|\\b)' + hljs.IDENT_RE + '\\b',
+    keywords: 'AbelianGroup Abort AbortKernels AbortProtect Above Abs Absolute AbsoluteCorrelation AbsoluteCorrelationFunction AbsoluteCurrentValue AbsoluteDashing AbsoluteFileName AbsoluteOptions AbsolutePointSize AbsoluteThickness AbsoluteTime AbsoluteTiming AccountingForm Accumulate Accuracy AccuracyGoal ActionDelay ActionMenu ActionMenuBox ActionMenuBoxOptions Active ActiveItem ActiveStyle AcyclicGraphQ AddOnHelpPath AddTo AdjacencyGraph AdjacencyList AdjacencyMatrix AdjustmentBox AdjustmentBoxOptions AdjustTimeSeriesForecast AffineTransform After AiryAi AiryAiPrime AiryAiZero AiryBi AiryBiPrime AiryBiZero AlgebraicIntegerQ AlgebraicNumber AlgebraicNumberDenominator AlgebraicNumberNorm AlgebraicNumberPolynomial AlgebraicNumberTrace AlgebraicRules AlgebraicRulesData Algebraics AlgebraicUnitQ Alignment AlignmentMarker AlignmentPoint All AllowedDimensions AllowGroupClose AllowInlineCells AllowKernelInitialization AllowReverseGroupClose AllowScriptLevelChange AlphaChannel AlternatingGroup AlternativeHypothesis Alternatives AmbientLight Analytic AnchoredSearch And AndersonDarlingTest AngerJ AngleBracket AngularGauge Animate AnimationCycleOffset AnimationCycleRepetitions AnimationDirection AnimationDisplayTime AnimationRate AnimationRepetitions AnimationRunning Animator AnimatorBox AnimatorBoxOptions AnimatorElements Annotation Annuity AnnuityDue Antialiasing Antisymmetric Apart ApartSquareFree Appearance AppearanceElements AppellF1 Append AppendTo Apply ArcCos ArcCosh ArcCot ArcCoth ArcCsc ArcCsch ArcSec ArcSech ArcSin ArcSinDistribution ArcSinh ArcTan ArcTanh Arg ArgMax ArgMin ArgumentCountQ ARIMAProcess ArithmeticGeometricMean ARMAProcess ARProcess Array ArrayComponents ArrayDepth ArrayFlatten ArrayPad ArrayPlot ArrayQ ArrayReshape ArrayRules Arrays Arrow Arrow3DBox ArrowBox Arrowheads AspectRatio AspectRatioFixed Assert Assuming Assumptions AstronomicalData Asynchronous AsynchronousTaskObject AsynchronousTasks AtomQ Attributes AugmentedSymmetricPolynomial AutoAction AutoDelete AutoEvaluateEvents AutoGeneratedPackage AutoIndent AutoIndentSpacings AutoItalicWords AutoloadPath AutoMatch Automatic AutomaticImageSize AutoMultiplicationSymbol AutoNumberFormatting AutoOpenNotebooks AutoOpenPalettes AutorunSequencing AutoScaling AutoScroll AutoSpacing AutoStyleOptions AutoStyleWords Axes AxesEdge AxesLabel AxesOrigin AxesStyle Axis ' +
+      'BabyMonsterGroupB Back Background BackgroundTasksSettings Backslash Backsubstitution Backward Band BandpassFilter BandstopFilter BarabasiAlbertGraphDistribution BarChart BarChart3D BarLegend BarlowProschanImportance BarnesG BarOrigin BarSpacing BartlettHannWindow BartlettWindow BaseForm Baseline BaselinePosition BaseStyle BatesDistribution BattleLemarieWavelet Because BeckmannDistribution Beep Before Begin BeginDialogPacket BeginFrontEndInteractionPacket BeginPackage BellB BellY Below BenfordDistribution BeniniDistribution BenktanderGibratDistribution BenktanderWeibullDistribution BernoulliB BernoulliDistribution BernoulliGraphDistribution BernoulliProcess BernsteinBasis BesselFilterModel BesselI BesselJ BesselJZero BesselK BesselY BesselYZero Beta BetaBinomialDistribution BetaDistribution BetaNegativeBinomialDistribution BetaPrimeDistribution BetaRegularized BetweennessCentrality BezierCurve BezierCurve3DBox BezierCurve3DBoxOptions BezierCurveBox BezierCurveBoxOptions BezierFunction BilateralFilter Binarize BinaryFormat BinaryImageQ BinaryRead BinaryReadList BinaryWrite BinCounts BinLists Binomial BinomialDistribution BinomialProcess BinormalDistribution BiorthogonalSplineWavelet BipartiteGraphQ BirnbaumImportance BirnbaumSaundersDistribution BitAnd BitClear BitGet BitLength BitNot BitOr BitSet BitShiftLeft BitShiftRight BitXor Black BlackmanHarrisWindow BlackmanNuttallWindow BlackmanWindow Blank BlankForm BlankNullSequence BlankSequence Blend Block BlockRandom BlomqvistBeta BlomqvistBetaTest Blue Blur BodePlot BohmanWindow Bold Bookmarks Boole BooleanConsecutiveFunction BooleanConvert BooleanCountingFunction BooleanFunction BooleanGraph BooleanMaxterms BooleanMinimize BooleanMinterms Booleans BooleanTable BooleanVariables BorderDimensions BorelTannerDistribution Bottom BottomHatTransform BoundaryStyle Bounds Box BoxBaselineShift BoxData BoxDimensions Boxed Boxes BoxForm BoxFormFormatTypes BoxFrame BoxID BoxMargins BoxMatrix BoxRatios BoxRotation BoxRotationPoint BoxStyle BoxWhiskerChart Bra BracketingBar BraKet BrayCurtisDistance BreadthFirstScan Break Brown BrownForsytheTest BrownianBridgeProcess BrowserCategory BSplineBasis BSplineCurve BSplineCurve3DBox BSplineCurveBox BSplineCurveBoxOptions BSplineFunction BSplineSurface BSplineSurface3DBox BubbleChart BubbleChart3D BubbleScale BubbleSizes BulletGauge BusinessDayQ ButterflyGraph ButterworthFilterModel Button ButtonBar ButtonBox ButtonBoxOptions ButtonCell ButtonContents ButtonData ButtonEvaluator ButtonExpandable ButtonFrame ButtonFunction ButtonMargins ButtonMinHeight ButtonNote ButtonNotebook ButtonSource ButtonStyle ButtonStyleMenuListing Byte ByteCount ByteOrdering ' +
+      'C CachedValue CacheGraphics CalendarData CalendarType CallPacket CanberraDistance Cancel CancelButton CandlestickChart Cap CapForm CapitalDifferentialD CardinalBSplineBasis CarmichaelLambda Cases Cashflow Casoratian Catalan CatalanNumber Catch CauchyDistribution CauchyWindow CayleyGraph CDF CDFDeploy CDFInformation CDFWavelet Ceiling Cell CellAutoOverwrite CellBaseline CellBoundingBox CellBracketOptions CellChangeTimes CellContents CellContext CellDingbat CellDynamicExpression CellEditDuplicate CellElementsBoundingBox CellElementSpacings CellEpilog CellEvaluationDuplicate CellEvaluationFunction CellEventActions CellFrame CellFrameColor CellFrameLabelMargins CellFrameLabels CellFrameMargins CellGroup CellGroupData CellGrouping CellGroupingRules CellHorizontalScrolling CellID CellLabel CellLabelAutoDelete CellLabelMargins CellLabelPositioning CellMargins CellObject CellOpen CellPrint CellProlog Cells CellSize CellStyle CellTags CellularAutomaton CensoredDistribution Censoring Center CenterDot CentralMoment CentralMomentGeneratingFunction CForm ChampernowneNumber ChanVeseBinarize Character CharacterEncoding CharacterEncodingsPath CharacteristicFunction CharacteristicPolynomial CharacterRange Characters ChartBaseStyle ChartElementData ChartElementDataFunction ChartElementFunction ChartElements ChartLabels ChartLayout ChartLegends ChartStyle Chebyshev1FilterModel Chebyshev2FilterModel ChebyshevDistance ChebyshevT ChebyshevU Check CheckAbort CheckAll Checkbox CheckboxBar CheckboxBox CheckboxBoxOptions ChemicalData ChessboardDistance ChiDistribution ChineseRemainder ChiSquareDistribution ChoiceButtons ChoiceDialog CholeskyDecomposition Chop Circle CircleBox CircleDot CircleMinus CirclePlus CircleTimes CirculantGraph CityData Clear ClearAll ClearAttributes ClearSystemCache ClebschGordan ClickPane Clip ClipboardNotebook ClipFill ClippingStyle ClipPlanes ClipRange Clock ClockGauge ClockwiseContourIntegral Close Closed CloseKernels ClosenessCentrality Closing ClosingAutoSave ClosingEvent ClusteringComponents CMYKColor Coarse Coefficient CoefficientArrays CoefficientDomain CoefficientList CoefficientRules CoifletWavelet Collect Colon ColonForm ColorCombine ColorConvert ColorData ColorDataFunction ColorFunction ColorFunctionScaling Colorize ColorNegate ColorOutput ColorProfileData ColorQuantize ColorReplace ColorRules ColorSelectorSettings ColorSeparate ColorSetter ColorSetterBox ColorSetterBoxOptions ColorSlider ColorSpace Column ColumnAlignments ColumnBackgrounds ColumnForm ColumnLines ColumnsEqual ColumnSpacings ColumnWidths CommonDefaultFormatTypes Commonest CommonestFilter CommonUnits CommunityBoundaryStyle CommunityGraphPlot CommunityLabels CommunityRegionStyle CompatibleUnitQ CompilationOptions CompilationTarget Compile Compiled CompiledFunction Complement CompleteGraph CompleteGraphQ CompleteKaryTree CompletionsListPacket Complex Complexes ComplexExpand ComplexInfinity ComplexityFunction ComponentMeasurements ' +
+      'ComponentwiseContextMenu Compose ComposeList ComposeSeries Composition CompoundExpression CompoundPoissonDistribution CompoundPoissonProcess CompoundRenewalProcess Compress CompressedData Condition ConditionalExpression Conditioned Cone ConeBox ConfidenceLevel ConfidenceRange ConfidenceTransform ConfigurationPath Congruent Conjugate ConjugateTranspose Conjunction Connect ConnectedComponents ConnectedGraphQ ConnesWindow ConoverTest ConsoleMessage ConsoleMessagePacket ConsolePrint Constant ConstantArray Constants ConstrainedMax ConstrainedMin ContentPadding ContentsBoundingBox ContentSelectable ContentSize Context ContextMenu Contexts ContextToFilename ContextToFileName Continuation Continue ContinuedFraction ContinuedFractionK ContinuousAction ContinuousMarkovProcess ContinuousTimeModelQ ContinuousWaveletData ContinuousWaveletTransform ContourDetect ContourGraphics ContourIntegral ContourLabels ContourLines ContourPlot ContourPlot3D Contours ContourShading ContourSmoothing ContourStyle ContraharmonicMean Control ControlActive ControlAlignment ControllabilityGramian ControllabilityMatrix ControllableDecomposition ControllableModelQ ControllerDuration ControllerInformation ControllerInformationData ControllerLinking ControllerManipulate ControllerMethod ControllerPath ControllerState ControlPlacement ControlsRendering ControlType Convergents ConversionOptions ConversionRules ConvertToBitmapPacket ConvertToPostScript ConvertToPostScriptPacket Convolve ConwayGroupCo1 ConwayGroupCo2 ConwayGroupCo3 CoordinateChartData CoordinatesToolOptions CoordinateTransform CoordinateTransformData CoprimeQ Coproduct CopulaDistribution Copyable CopyDirectory CopyFile CopyTag CopyToClipboard CornerFilter CornerNeighbors Correlation CorrelationDistance CorrelationFunction CorrelationTest Cos Cosh CoshIntegral CosineDistance CosineWindow CosIntegral Cot Coth Count CounterAssignments CounterBox CounterBoxOptions CounterClockwiseContourIntegral CounterEvaluator CounterFunction CounterIncrements CounterStyle CounterStyleMenuListing CountRoots CountryData Covariance CovarianceEstimatorFunction CovarianceFunction CoxianDistribution CoxIngersollRossProcess CoxModel CoxModelFit CramerVonMisesTest CreateArchive CreateDialog CreateDirectory CreateDocument CreateIntermediateDirectories CreatePalette CreatePalettePacket CreateScheduledTask CreateTemporary CreateWindow CriticalityFailureImportance CriticalitySuccessImportance CriticalSection Cross CrossingDetect CrossMatrix Csc Csch CubeRoot Cubics Cuboid CuboidBox Cumulant CumulantGeneratingFunction Cup CupCap Curl CurlyDoubleQuote CurlyQuote CurrentImage CurrentlySpeakingPacket CurrentValue CurvatureFlowFilter CurveClosed Cyan CycleGraph CycleIndexPolynomial Cycles CyclicGroup Cyclotomic Cylinder CylinderBox CylindricalDecomposition ' +
+      'D DagumDistribution DamerauLevenshteinDistance DampingFactor Darker Dashed Dashing DataCompression DataDistribution DataRange DataReversed Date DateDelimiters DateDifference DateFunction DateList DateListLogPlot DateListPlot DatePattern DatePlus DateRange DateString DateTicksFormat DaubechiesWavelet DavisDistribution DawsonF DayCount DayCountConvention DayMatchQ DayName DayPlus DayRange DayRound DeBruijnGraph Debug DebugTag Decimal DeclareKnownSymbols DeclarePackage Decompose Decrement DedekindEta Default DefaultAxesStyle DefaultBaseStyle DefaultBoxStyle DefaultButton DefaultColor DefaultControlPlacement DefaultDuplicateCellStyle DefaultDuration DefaultElement DefaultFaceGridsStyle DefaultFieldHintStyle DefaultFont DefaultFontProperties DefaultFormatType DefaultFormatTypeForStyle DefaultFrameStyle DefaultFrameTicksStyle DefaultGridLinesStyle DefaultInlineFormatType DefaultInputFormatType DefaultLabelStyle DefaultMenuStyle DefaultNaturalLanguage DefaultNewCellStyle DefaultNewInlineCellStyle DefaultNotebook DefaultOptions DefaultOutputFormatType DefaultStyle DefaultStyleDefinitions DefaultTextFormatType DefaultTextInlineFormatType DefaultTicksStyle DefaultTooltipStyle DefaultValues Defer DefineExternal DefineInputStreamMethod DefineOutputStreamMethod Definition Degree DegreeCentrality DegreeGraphDistribution DegreeLexicographic DegreeReverseLexicographic Deinitialization Del Deletable Delete DeleteBorderComponents DeleteCases DeleteContents DeleteDirectory DeleteDuplicates DeleteFile DeleteSmallComponents DeleteWithContents DeletionWarning Delimiter DelimiterFlashTime DelimiterMatching Delimiters Denominator DensityGraphics DensityHistogram DensityPlot DependentVariables Deploy Deployed Depth DepthFirstScan Derivative DerivativeFilter DescriptorStateSpace DesignMatrix Det DGaussianWavelet DiacriticalPositioning Diagonal DiagonalMatrix Dialog DialogIndent DialogInput DialogLevel DialogNotebook DialogProlog DialogReturn DialogSymbols Diamond DiamondMatrix DiceDissimilarity DictionaryLookup DifferenceDelta DifferenceOrder DifferenceRoot DifferenceRootReduce Differences DifferentialD DifferentialRoot DifferentialRootReduce DifferentiatorFilter DigitBlock DigitBlockMinimum DigitCharacter DigitCount DigitQ DihedralGroup Dilation Dimensions DiracComb DiracDelta DirectedEdge DirectedEdges DirectedGraph DirectedGraphQ DirectedInfinity Direction Directive Directory DirectoryName DirectoryQ DirectoryStack DirichletCharacter DirichletConvolve DirichletDistribution DirichletL DirichletTransform DirichletWindow DisableConsolePrintPacket DiscreteChirpZTransform DiscreteConvolve DiscreteDelta DiscreteHadamardTransform DiscreteIndicator DiscreteLQEstimatorGains DiscreteLQRegulatorGains DiscreteLyapunovSolve DiscreteMarkovProcess DiscretePlot DiscretePlot3D DiscreteRatio DiscreteRiccatiSolve DiscreteShift DiscreteTimeModelQ DiscreteUniformDistribution DiscreteVariables DiscreteWaveletData DiscreteWaveletPacketTransform ' +
+      'DiscreteWaveletTransform Discriminant Disjunction Disk DiskBox DiskMatrix Dispatch DispersionEstimatorFunction Display DisplayAllSteps DisplayEndPacket DisplayFlushImagePacket DisplayForm DisplayFunction DisplayPacket DisplayRules DisplaySetSizePacket DisplayString DisplayTemporary DisplayWith DisplayWithRef DisplayWithVariable DistanceFunction DistanceTransform Distribute Distributed DistributedContexts DistributeDefinitions DistributionChart DistributionDomain DistributionFitTest DistributionParameterAssumptions DistributionParameterQ Dithering Div Divergence Divide DivideBy Dividers Divisible Divisors DivisorSigma DivisorSum DMSList DMSString Do DockedCells DocumentNotebook DominantColors DOSTextFormat Dot DotDashed DotEqual Dotted DoubleBracketingBar DoubleContourIntegral DoubleDownArrow DoubleLeftArrow DoubleLeftRightArrow DoubleLeftTee DoubleLongLeftArrow DoubleLongLeftRightArrow DoubleLongRightArrow DoubleRightArrow DoubleRightTee DoubleUpArrow DoubleUpDownArrow DoubleVerticalBar DoublyInfinite Down DownArrow DownArrowBar DownArrowUpArrow DownLeftRightVector DownLeftTeeVector DownLeftVector DownLeftVectorBar DownRightTeeVector DownRightVector DownRightVectorBar Downsample DownTee DownTeeArrow DownValues DragAndDrop DrawEdges DrawFrontFaces DrawHighlighted Drop DSolve Dt DualLinearProgramming DualSystemsModel DumpGet DumpSave DuplicateFreeQ Dynamic DynamicBox DynamicBoxOptions DynamicEvaluationTimeout DynamicLocation DynamicModule DynamicModuleBox DynamicModuleBoxOptions DynamicModuleParent DynamicModuleValues DynamicName DynamicNamespace DynamicReference DynamicSetting DynamicUpdating DynamicWrapper DynamicWrapperBox DynamicWrapperBoxOptions ' +
+      'E EccentricityCentrality EdgeAdd EdgeBetweennessCentrality EdgeCapacity EdgeCapForm EdgeColor EdgeConnectivity EdgeCost EdgeCount EdgeCoverQ EdgeDashing EdgeDelete EdgeDetect EdgeForm EdgeIndex EdgeJoinForm EdgeLabeling EdgeLabels EdgeLabelStyle EdgeList EdgeOpacity EdgeQ EdgeRenderingFunction EdgeRules EdgeShapeFunction EdgeStyle EdgeThickness EdgeWeight Editable EditButtonSettings EditCellTagsSettings EditDistance EffectiveInterest Eigensystem Eigenvalues EigenvectorCentrality Eigenvectors Element ElementData Eliminate EliminationOrder EllipticE EllipticExp EllipticExpPrime EllipticF EllipticFilterModel EllipticK EllipticLog EllipticNomeQ EllipticPi EllipticReducedHalfPeriods EllipticTheta EllipticThetaPrime EmitSound EmphasizeSyntaxErrors EmpiricalDistribution Empty EmptyGraphQ EnableConsolePrintPacket Enabled Encode End EndAdd EndDialogPacket EndFrontEndInteractionPacket EndOfFile EndOfLine EndOfString EndPackage EngineeringForm Enter EnterExpressionPacket EnterTextPacket Entropy EntropyFilter Environment Epilog Equal EqualColumns EqualRows EqualTilde EquatedTo Equilibrium EquirippleFilterKernel Equivalent Erf Erfc Erfi ErlangB ErlangC ErlangDistribution Erosion ErrorBox ErrorBoxOptions ErrorNorm ErrorPacket ErrorsDialogSettings EstimatedDistribution EstimatedProcess EstimatorGains EstimatorRegulator EuclideanDistance EulerE EulerGamma EulerianGraphQ EulerPhi Evaluatable Evaluate Evaluated EvaluatePacket EvaluationCell EvaluationCompletionAction EvaluationElements EvaluationMode EvaluationMonitor EvaluationNotebook EvaluationObject EvaluationOrder Evaluator EvaluatorNames EvenQ EventData EventEvaluator EventHandler EventHandlerTag EventLabels ExactBlackmanWindow ExactNumberQ ExactRootIsolation ExampleData Except ExcludedForms ExcludePods Exclusions ExclusionsStyle Exists Exit ExitDialog Exp Expand ExpandAll ExpandDenominator ExpandFileName ExpandNumerator Expectation ExpectationE ExpectedValue ExpGammaDistribution ExpIntegralE ExpIntegralEi Exponent ExponentFunction ExponentialDistribution ExponentialFamily ExponentialGeneratingFunction ExponentialMovingAverage ExponentialPowerDistribution ExponentPosition ExponentStep Export ExportAutoReplacements ExportPacket ExportString Expression ExpressionCell ExpressionPacket ExpToTrig ExtendedGCD Extension ExtentElementFunction ExtentMarkers ExtentSize ExternalCall ExternalDataCharacterEncoding Extract ExtractArchive ExtremeValueDistribution ' +
+      'FaceForm FaceGrids FaceGridsStyle Factor FactorComplete Factorial Factorial2 FactorialMoment FactorialMomentGeneratingFunction FactorialPower FactorInteger FactorList FactorSquareFree FactorSquareFreeList FactorTerms FactorTermsList Fail FailureDistribution False FARIMAProcess FEDisableConsolePrintPacket FeedbackSector FeedbackSectorStyle FeedbackType FEEnableConsolePrintPacket Fibonacci FieldHint FieldHintStyle FieldMasked FieldSize File FileBaseName FileByteCount FileDate FileExistsQ FileExtension FileFormat FileHash FileInformation FileName FileNameDepth FileNameDialogSettings FileNameDrop FileNameJoin FileNames FileNameSetter FileNameSplit FileNameTake FilePrint FileType FilledCurve FilledCurveBox Filling FillingStyle FillingTransform FilterRules FinancialBond FinancialData FinancialDerivative FinancialIndicator Find FindArgMax FindArgMin FindClique FindClusters FindCurvePath FindDistributionParameters FindDivisions FindEdgeCover FindEdgeCut FindEulerianCycle FindFaces FindFile FindFit FindGeneratingFunction FindGeoLocation FindGeometricTransform FindGraphCommunities FindGraphIsomorphism FindGraphPartition FindHamiltonianCycle FindIndependentEdgeSet FindIndependentVertexSet FindInstance FindIntegerNullVector FindKClan FindKClique FindKClub FindKPlex FindLibrary FindLinearRecurrence FindList FindMaximum FindMaximumFlow FindMaxValue FindMinimum FindMinimumCostFlow FindMinimumCut FindMinValue FindPermutation FindPostmanTour FindProcessParameters FindRoot FindSequenceFunction FindSettings FindShortestPath FindShortestTour FindThreshold FindVertexCover FindVertexCut Fine FinishDynamic FiniteAbelianGroupCount FiniteGroupCount FiniteGroupData First FirstPassageTimeDistribution FischerGroupFi22 FischerGroupFi23 FischerGroupFi24Prime FisherHypergeometricDistribution FisherRatioTest FisherZDistribution Fit FitAll FittedModel FixedPoint FixedPointList FlashSelection Flat Flatten FlattenAt FlatTopWindow FlipView Floor FlushPrintOutputPacket Fold FoldList Font FontColor FontFamily FontForm FontName FontOpacity FontPostScriptName FontProperties FontReencoding FontSize FontSlant FontSubstitutions FontTracking FontVariations FontWeight For ForAll Format FormatRules FormatType FormatTypeAutoConvert FormatValues FormBox FormBoxOptions FortranForm Forward ForwardBackward Fourier FourierCoefficient FourierCosCoefficient FourierCosSeries FourierCosTransform FourierDCT FourierDCTFilter FourierDCTMatrix FourierDST FourierDSTMatrix FourierMatrix FourierParameters FourierSequenceTransform FourierSeries FourierSinCoefficient FourierSinSeries FourierSinTransform FourierTransform FourierTrigSeries FractionalBrownianMotionProcess FractionalPart FractionBox FractionBoxOptions FractionLine Frame FrameBox FrameBoxOptions Framed FrameInset FrameLabel Frameless FrameMargins FrameStyle FrameTicks FrameTicksStyle FRatioDistribution FrechetDistribution FreeQ FrequencySamplingFilterKernel FresnelC FresnelS Friday FrobeniusNumber FrobeniusSolve ' +
+      'FromCharacterCode FromCoefficientRules FromContinuedFraction FromDate FromDigits FromDMS Front FrontEndDynamicExpression FrontEndEventActions FrontEndExecute FrontEndObject FrontEndResource FrontEndResourceString FrontEndStackSize FrontEndToken FrontEndTokenExecute FrontEndValueCache FrontEndVersion FrontFaceColor FrontFaceOpacity Full FullAxes FullDefinition FullForm FullGraphics FullOptions FullSimplify Function FunctionExpand FunctionInterpolation FunctionSpace FussellVeselyImportance ' +
+      'GaborFilter GaborMatrix GaborWavelet GainMargins GainPhaseMargins Gamma GammaDistribution GammaRegularized GapPenalty Gather GatherBy GaugeFaceElementFunction GaugeFaceStyle GaugeFrameElementFunction GaugeFrameSize GaugeFrameStyle GaugeLabels GaugeMarkers GaugeStyle GaussianFilter GaussianIntegers GaussianMatrix GaussianWindow GCD GegenbauerC General GeneralizedLinearModelFit GenerateConditions GeneratedCell GeneratedParameters GeneratingFunction Generic GenericCylindricalDecomposition GenomeData GenomeLookup GeodesicClosing GeodesicDilation GeodesicErosion GeodesicOpening GeoDestination GeodesyData GeoDirection GeoDistance GeoGridPosition GeometricBrownianMotionProcess GeometricDistribution GeometricMean GeometricMeanFilter GeometricTransformation GeometricTransformation3DBox GeometricTransformation3DBoxOptions GeometricTransformationBox GeometricTransformationBoxOptions GeoPosition GeoPositionENU GeoPositionXYZ GeoProjectionData GestureHandler GestureHandlerTag Get GetBoundingBoxSizePacket GetContext GetEnvironment GetFileName GetFrontEndOptionsDataPacket GetLinebreakInformationPacket GetMenusPacket GetPageBreakInformationPacket Glaisher GlobalClusteringCoefficient GlobalPreferences GlobalSession Glow GoldenRatio GompertzMakehamDistribution GoodmanKruskalGamma GoodmanKruskalGammaTest Goto Grad Gradient GradientFilter GradientOrientationFilter Graph GraphAssortativity GraphCenter GraphComplement GraphData GraphDensity GraphDiameter GraphDifference GraphDisjointUnion ' +
+      'GraphDistance GraphDistanceMatrix GraphElementData GraphEmbedding GraphHighlight GraphHighlightStyle GraphHub Graphics Graphics3D Graphics3DBox Graphics3DBoxOptions GraphicsArray GraphicsBaseline GraphicsBox GraphicsBoxOptions GraphicsColor GraphicsColumn GraphicsComplex GraphicsComplex3DBox GraphicsComplex3DBoxOptions GraphicsComplexBox GraphicsComplexBoxOptions GraphicsContents GraphicsData GraphicsGrid GraphicsGridBox GraphicsGroup GraphicsGroup3DBox GraphicsGroup3DBoxOptions GraphicsGroupBox GraphicsGroupBoxOptions GraphicsGrouping GraphicsHighlightColor GraphicsRow GraphicsSpacing GraphicsStyle GraphIntersection GraphLayout GraphLinkEfficiency GraphPeriphery GraphPlot GraphPlot3D GraphPower GraphPropertyDistribution GraphQ GraphRadius GraphReciprocity GraphRoot GraphStyle GraphUnion Gray GrayLevel GreatCircleDistance Greater GreaterEqual GreaterEqualLess GreaterFullEqual GreaterGreater GreaterLess GreaterSlantEqual GreaterTilde Green Grid GridBaseline GridBox GridBoxAlignment GridBoxBackground GridBoxDividers GridBoxFrame GridBoxItemSize GridBoxItemStyle GridBoxOptions GridBoxSpacings GridCreationSettings GridDefaultElement GridElementStyleOptions GridFrame GridFrameMargins GridGraph GridLines GridLinesStyle GroebnerBasis GroupActionBase GroupCentralizer GroupElementFromWord GroupElementPosition GroupElementQ GroupElements GroupElementToWord GroupGenerators GroupMultiplicationTable GroupOrbits GroupOrder GroupPageBreakWithin GroupSetwiseStabilizer GroupStabilizer GroupStabilizerChain Gudermannian GumbelDistribution ' +
+      'HaarWavelet HadamardMatrix HalfNormalDistribution HamiltonianGraphQ HammingDistance HammingWindow HankelH1 HankelH2 HankelMatrix HannPoissonWindow HannWindow HaradaNortonGroupHN HararyGraph HarmonicMean HarmonicMeanFilter HarmonicNumber Hash HashTable Haversine HazardFunction Head HeadCompose Heads HeavisideLambda HeavisidePi HeavisideTheta HeldGroupHe HeldPart HelpBrowserLookup HelpBrowserNotebook HelpBrowserSettings HermiteDecomposition HermiteH HermitianMatrixQ HessenbergDecomposition Hessian HexadecimalCharacter Hexahedron HexahedronBox HexahedronBoxOptions HiddenSurface HighlightGraph HighlightImage HighpassFilter HigmanSimsGroupHS HilbertFilter HilbertMatrix Histogram Histogram3D HistogramDistribution HistogramList HistogramTransform HistogramTransformInterpolation HitMissTransform HITSCentrality HodgeDual HoeffdingD HoeffdingDTest Hold HoldAll HoldAllComplete HoldComplete HoldFirst HoldForm HoldPattern HoldRest HolidayCalendar HomeDirectory HomePage Horizontal HorizontalForm HorizontalGauge HorizontalScrollPosition HornerForm HotellingTSquareDistribution HoytDistribution HTMLSave Hue HumpDownHump HumpEqual HurwitzLerchPhi HurwitzZeta HyperbolicDistribution HypercubeGraph HyperexponentialDistribution Hyperfactorial Hypergeometric0F1 Hypergeometric0F1Regularized Hypergeometric1F1 Hypergeometric1F1Regularized Hypergeometric2F1 Hypergeometric2F1Regularized HypergeometricDistribution HypergeometricPFQ HypergeometricPFQRegularized HypergeometricU Hyperlink HyperlinkCreationSettings Hyphenation HyphenationOptions HypoexponentialDistribution HypothesisTestData ' +
+      'I Identity IdentityMatrix If IgnoreCase Im Image Image3D Image3DSlices ImageAccumulate ImageAdd ImageAdjust ImageAlign ImageApply ImageAspectRatio ImageAssemble ImageCache ImageCacheValid ImageCapture ImageChannels ImageClip ImageColorSpace ImageCompose ImageConvolve ImageCooccurrence ImageCorners ImageCorrelate ImageCorrespondingPoints ImageCrop ImageData ImageDataPacket ImageDeconvolve ImageDemosaic ImageDifference ImageDimensions ImageDistance ImageEffect ImageFeatureTrack ImageFileApply ImageFileFilter ImageFileScan ImageFilter ImageForestingComponents ImageForwardTransformation ImageHistogram ImageKeypoints ImageLevels ImageLines ImageMargins ImageMarkers ImageMeasurements ImageMultiply ImageOffset ImagePad ImagePadding ImagePartition ImagePeriodogram ImagePerspectiveTransformation ImageQ ImageRangeCache ImageReflect ImageRegion ImageResize ImageResolution ImageRotate ImageRotated ImageScaled ImageScan ImageSize ImageSizeAction ImageSizeCache ImageSizeMultipliers ImageSizeRaw ImageSubtract ImageTake ImageTransformation ImageTrim ImageType ImageValue ImageValuePositions Implies Import ImportAutoReplacements ImportString ImprovementImportance In IncidenceGraph IncidenceList IncidenceMatrix IncludeConstantBasis IncludeFileExtension IncludePods IncludeSingularTerm Increment Indent IndentingNewlineSpacings IndentMaxFraction IndependenceTest IndependentEdgeSetQ IndependentUnit IndependentVertexSetQ Indeterminate IndexCreationOptions Indexed IndexGraph IndexTag Inequality InexactNumberQ InexactNumbers Infinity Infix Information Inherited InheritScope Initialization InitializationCell InitializationCellEvaluation InitializationCellWarning InlineCounterAssignments InlineCounterIncrements InlineRules Inner Inpaint Input InputAliases InputAssumptions InputAutoReplacements InputField InputFieldBox InputFieldBoxOptions InputForm InputGrouping InputNamePacket InputNotebook InputPacket InputSettings InputStream InputString InputStringPacket InputToBoxFormPacket Insert InsertionPointObject InsertResults Inset Inset3DBox Inset3DBoxOptions InsetBox InsetBoxOptions Install InstallService InString Integer IntegerDigits IntegerExponent IntegerLength IntegerPart IntegerPartitions IntegerQ Integers IntegerString Integral Integrate Interactive InteractiveTradingChart Interlaced Interleaving InternallyBalancedDecomposition InterpolatingFunction InterpolatingPolynomial Interpolation InterpolationOrder InterpolationPoints InterpolationPrecision Interpretation InterpretationBox InterpretationBoxOptions InterpretationFunction ' +
+      'InterpretTemplate InterquartileRange Interrupt InterruptSettings Intersection Interval IntervalIntersection IntervalMemberQ IntervalUnion Inverse InverseBetaRegularized InverseCDF InverseChiSquareDistribution InverseContinuousWaveletTransform InverseDistanceTransform InverseEllipticNomeQ InverseErf InverseErfc InverseFourier InverseFourierCosTransform InverseFourierSequenceTransform InverseFourierSinTransform InverseFourierTransform InverseFunction InverseFunctions InverseGammaDistribution InverseGammaRegularized InverseGaussianDistribution InverseGudermannian InverseHaversine InverseJacobiCD InverseJacobiCN InverseJacobiCS InverseJacobiDC InverseJacobiDN InverseJacobiDS InverseJacobiNC InverseJacobiND InverseJacobiNS InverseJacobiSC InverseJacobiSD InverseJacobiSN InverseLaplaceTransform InversePermutation InverseRadon InverseSeries InverseSurvivalFunction InverseWaveletTransform InverseWeierstrassP InverseZTransform Invisible InvisibleApplication InvisibleTimes IrreduciblePolynomialQ IsolatingInterval IsomorphicGraphQ IsotopeData Italic Item ItemBox ItemBoxOptions ItemSize ItemStyle ItoProcess ' +
+      'JaccardDissimilarity JacobiAmplitude Jacobian JacobiCD JacobiCN JacobiCS JacobiDC JacobiDN JacobiDS JacobiNC JacobiND JacobiNS JacobiP JacobiSC JacobiSD JacobiSN JacobiSymbol JacobiZeta JankoGroupJ1 JankoGroupJ2 JankoGroupJ3 JankoGroupJ4 JarqueBeraALMTest JohnsonDistribution Join Joined JoinedCurve JoinedCurveBox JoinForm JordanDecomposition JordanModelDecomposition ' +
+      'K KagiChart KaiserBesselWindow KaiserWindow KalmanEstimator KalmanFilter KarhunenLoeveDecomposition KaryTree KatzCentrality KCoreComponents KDistribution KelvinBei KelvinBer KelvinKei KelvinKer KendallTau KendallTauTest KernelExecute KernelMixtureDistribution KernelObject Kernels Ket Khinchin KirchhoffGraph KirchhoffMatrix KleinInvariantJ KnightTourGraph KnotData KnownUnitQ KolmogorovSmirnovTest KroneckerDelta KroneckerModelDecomposition KroneckerProduct KroneckerSymbol KuiperTest KumaraswamyDistribution Kurtosis KuwaharaFilter ' +
+      'Label Labeled LabeledSlider LabelingFunction LabelStyle LaguerreL LambdaComponents LambertW LanczosWindow LandauDistribution Language LanguageCategory LaplaceDistribution LaplaceTransform Laplacian LaplacianFilter LaplacianGaussianFilter Large Larger Last Latitude LatitudeLongitude LatticeData LatticeReduce Launch LaunchKernels LayeredGraphPlot LayerSizeFunction LayoutInformation LCM LeafCount LeapYearQ LeastSquares LeastSquaresFilterKernel Left LeftArrow LeftArrowBar LeftArrowRightArrow LeftDownTeeVector LeftDownVector LeftDownVectorBar LeftRightArrow LeftRightVector LeftTee LeftTeeArrow LeftTeeVector LeftTriangle LeftTriangleBar LeftTriangleEqual LeftUpDownVector LeftUpTeeVector LeftUpVector LeftUpVectorBar LeftVector LeftVectorBar LegendAppearance Legended LegendFunction LegendLabel LegendLayout LegendMargins LegendMarkers LegendMarkerSize LegendreP LegendreQ LegendreType Length LengthWhile LerchPhi Less LessEqual LessEqualGreater LessFullEqual LessGreater LessLess LessSlantEqual LessTilde LetterCharacter LetterQ Level LeveneTest LeviCivitaTensor LevyDistribution Lexicographic LibraryFunction LibraryFunctionError LibraryFunctionInformation LibraryFunctionLoad LibraryFunctionUnload LibraryLoad LibraryUnload LicenseID LiftingFilterData LiftingWaveletTransform LightBlue LightBrown LightCyan Lighter LightGray LightGreen Lighting LightingAngle LightMagenta LightOrange LightPink LightPurple LightRed LightSources LightYellow Likelihood Limit LimitsPositioning LimitsPositioningTokens LindleyDistribution Line Line3DBox LinearFilter LinearFractionalTransform LinearModelFit LinearOffsetFunction LinearProgramming LinearRecurrence LinearSolve LinearSolveFunction LineBox LineBreak LinebreakAdjustments LineBreakChart LineBreakWithin LineColor LineForm LineGraph LineIndent LineIndentMaxFraction LineIntegralConvolutionPlot LineIntegralConvolutionScale LineLegend LineOpacity LineSpacing LineWrapParts LinkActivate LinkClose LinkConnect LinkConnectedQ LinkCreate LinkError LinkFlush LinkFunction LinkHost LinkInterrupt LinkLaunch LinkMode LinkObject LinkOpen LinkOptions LinkPatterns LinkProtocol LinkRead LinkReadHeld LinkReadyQ Links LinkWrite LinkWriteHeld LiouvilleLambda List Listable ListAnimate ListContourPlot ListContourPlot3D ListConvolve ListCorrelate ListCurvePathPlot ListDeconvolve ListDensityPlot Listen ListFourierSequenceTransform ListInterpolation ListLineIntegralConvolutionPlot ListLinePlot ListLogLinearPlot ListLogLogPlot ListLogPlot ListPicker ListPickerBox ListPickerBoxBackground ListPickerBoxOptions ListPlay ListPlot ListPlot3D ListPointPlot3D ListPolarPlot ListQ ListStreamDensityPlot ListStreamPlot ListSurfacePlot3D ListVectorDensityPlot ListVectorPlot ListVectorPlot3D ListZTransform Literal LiteralSearch LocalClusteringCoefficient LocalizeVariables LocationEquivalenceTest LocationTest Locator LocatorAutoCreate LocatorBox LocatorBoxOptions LocatorCentering LocatorPane LocatorPaneBox LocatorPaneBoxOptions ' +
+      'LocatorRegion Locked Log Log10 Log2 LogBarnesG LogGamma LogGammaDistribution LogicalExpand LogIntegral LogisticDistribution LogitModelFit LogLikelihood LogLinearPlot LogLogisticDistribution LogLogPlot LogMultinormalDistribution LogNormalDistribution LogPlot LogRankTest LogSeriesDistribution LongEqual Longest LongestAscendingSequence LongestCommonSequence LongestCommonSequencePositions LongestCommonSubsequence LongestCommonSubsequencePositions LongestMatch LongForm Longitude LongLeftArrow LongLeftRightArrow LongRightArrow Loopback LoopFreeGraphQ LowerCaseQ LowerLeftArrow LowerRightArrow LowerTriangularize LowpassFilter LQEstimatorGains LQGRegulator LQOutputRegulatorGains LQRegulatorGains LUBackSubstitution LucasL LuccioSamiComponents LUDecomposition LyapunovSolve LyonsGroupLy ' +
+      'MachineID MachineName MachineNumberQ MachinePrecision MacintoshSystemPageSetup Magenta Magnification Magnify MainSolve MaintainDynamicCaches Majority MakeBoxes MakeExpression MakeRules MangoldtLambda ManhattanDistance Manipulate Manipulator MannWhitneyTest MantissaExponent Manual Map MapAll MapAt MapIndexed MAProcess MapThread MarcumQ MardiaCombinedTest MardiaKurtosisTest MardiaSkewnessTest MarginalDistribution MarkovProcessProperties Masking MatchingDissimilarity MatchLocalNameQ MatchLocalNames MatchQ Material MathematicaNotation MathieuC MathieuCharacteristicA MathieuCharacteristicB MathieuCharacteristicExponent MathieuCPrime MathieuGroupM11 MathieuGroupM12 MathieuGroupM22 MathieuGroupM23 MathieuGroupM24 MathieuS MathieuSPrime MathMLForm MathMLText Matrices MatrixExp MatrixForm MatrixFunction MatrixLog MatrixPlot MatrixPower MatrixQ MatrixRank Max MaxBend MaxDetect MaxExtraBandwidths MaxExtraConditions MaxFeatures MaxFilter Maximize MaxIterations MaxMemoryUsed MaxMixtureKernels MaxPlotPoints MaxPoints MaxRecursion MaxStableDistribution MaxStepFraction MaxSteps MaxStepSize MaxValue MaxwellDistribution McLaughlinGroupMcL Mean MeanClusteringCoefficient MeanDegreeConnectivity MeanDeviation MeanFilter MeanGraphDistance MeanNeighborDegree MeanShift MeanShiftFilter Median MedianDeviation MedianFilter Medium MeijerG MeixnerDistribution MemberQ MemoryConstrained MemoryInUse Menu MenuAppearance MenuCommandKey MenuEvaluator MenuItem MenuPacket MenuSortingValue MenuStyle MenuView MergeDifferences Mesh MeshFunctions MeshRange MeshShading MeshStyle Message MessageDialog MessageList MessageName MessageOptions MessagePacket Messages MessagesNotebook MetaCharacters MetaInformation Method MethodOptions MexicanHatWavelet MeyerWavelet Min MinDetect MinFilter MinimalPolynomial MinimalStateSpaceModel Minimize Minors MinRecursion MinSize MinStableDistribution Minus MinusPlus MinValue Missing MissingDataMethod MittagLefflerE MixedRadix MixedRadixQuantity MixtureDistribution Mod Modal Mode Modular ModularLambda Module Modulus MoebiusMu Moment Momentary MomentConvert MomentEvaluate MomentGeneratingFunction Monday Monitor MonomialList MonomialOrder MonsterGroupM MorletWavelet MorphologicalBinarize MorphologicalBranchPoints MorphologicalComponents MorphologicalEulerNumber MorphologicalGraph MorphologicalPerimeter MorphologicalTransform Most MouseAnnotation MouseAppearance MouseAppearanceTag MouseButtons Mouseover MousePointerNote MousePosition MovingAverage MovingMedian MoyalDistribution MultiedgeStyle MultilaunchWarning MultiLetterItalics MultiLetterStyle MultilineFunction Multinomial MultinomialDistribution MultinormalDistribution MultiplicativeOrder Multiplicity Multiselection MultivariateHypergeometricDistribution MultivariatePoissonDistribution MultivariateTDistribution ' +
+      'N NakagamiDistribution NameQ Names NamespaceBox Nand NArgMax NArgMin NBernoulliB NCache NDSolve NDSolveValue Nearest NearestFunction NeedCurrentFrontEndPackagePacket NeedCurrentFrontEndSymbolsPacket NeedlemanWunschSimilarity Needs Negative NegativeBinomialDistribution NegativeMultinomialDistribution NeighborhoodGraph Nest NestedGreaterGreater NestedLessLess NestedScriptRules NestList NestWhile NestWhileList NevilleThetaC NevilleThetaD NevilleThetaN NevilleThetaS NewPrimitiveStyle NExpectation Next NextPrime NHoldAll NHoldFirst NHoldRest NicholsGridLines NicholsPlot NIntegrate NMaximize NMaxValue NMinimize NMinValue NominalVariables NonAssociative NoncentralBetaDistribution NoncentralChiSquareDistribution NoncentralFRatioDistribution NoncentralStudentTDistribution NonCommutativeMultiply NonConstants None NonlinearModelFit NonlocalMeansFilter NonNegative NonPositive Nor NorlundB Norm Normal NormalDistribution NormalGrouping Normalize NormalizedSquaredEuclideanDistance NormalsFunction NormFunction Not NotCongruent NotCupCap NotDoubleVerticalBar Notebook NotebookApply NotebookAutoSave NotebookClose NotebookConvertSettings NotebookCreate NotebookCreateReturnObject NotebookDefault NotebookDelete NotebookDirectory NotebookDynamicExpression NotebookEvaluate NotebookEventActions NotebookFileName NotebookFind NotebookFindReturnObject NotebookGet NotebookGetLayoutInformationPacket NotebookGetMisspellingsPacket NotebookInformation NotebookInterfaceObject NotebookLocate NotebookObject NotebookOpen NotebookOpenReturnObject NotebookPath NotebookPrint NotebookPut NotebookPutReturnObject NotebookRead NotebookResetGeneratedCells Notebooks NotebookSave NotebookSaveAs NotebookSelection NotebookSetupLayoutInformationPacket NotebooksMenu NotebookWrite NotElement NotEqualTilde NotExists NotGreater NotGreaterEqual NotGreaterFullEqual NotGreaterGreater NotGreaterLess NotGreaterSlantEqual NotGreaterTilde NotHumpDownHump NotHumpEqual NotLeftTriangle NotLeftTriangleBar NotLeftTriangleEqual NotLess NotLessEqual NotLessFullEqual NotLessGreater NotLessLess NotLessSlantEqual NotLessTilde NotNestedGreaterGreater NotNestedLessLess NotPrecedes NotPrecedesEqual NotPrecedesSlantEqual NotPrecedesTilde NotReverseElement NotRightTriangle NotRightTriangleBar NotRightTriangleEqual NotSquareSubset NotSquareSubsetEqual NotSquareSuperset NotSquareSupersetEqual NotSubset NotSubsetEqual NotSucceeds NotSucceedsEqual NotSucceedsSlantEqual NotSucceedsTilde NotSuperset NotSupersetEqual NotTilde NotTildeEqual NotTildeFullEqual NotTildeTilde NotVerticalBar NProbability NProduct NProductFactors NRoots NSolve NSum NSumTerms Null NullRecords NullSpace NullWords Number NumberFieldClassNumber NumberFieldDiscriminant NumberFieldFundamentalUnits NumberFieldIntegralBasis NumberFieldNormRepresentatives NumberFieldRegulator NumberFieldRootsOfUnity NumberFieldSignature NumberForm NumberFormat NumberMarks NumberMultiplier NumberPadding NumberPoint NumberQ NumberSeparator ' +
+      'NumberSigns NumberString Numerator NumericFunction NumericQ NuttallWindow NValues NyquistGridLines NyquistPlot ' +
+      'O ObservabilityGramian ObservabilityMatrix ObservableDecomposition ObservableModelQ OddQ Off Offset OLEData On ONanGroupON OneIdentity Opacity Open OpenAppend Opener OpenerBox OpenerBoxOptions OpenerView OpenFunctionInspectorPacket Opening OpenRead OpenSpecialOptions OpenTemporary OpenWrite Operate OperatingSystem OptimumFlowData Optional OptionInspectorSettings OptionQ Options OptionsPacket OptionsPattern OptionValue OptionValueBox OptionValueBoxOptions Or Orange Order OrderDistribution OrderedQ Ordering Orderless OrnsteinUhlenbeckProcess Orthogonalize Out Outer OutputAutoOverwrite OutputControllabilityMatrix OutputControllableModelQ OutputForm OutputFormData OutputGrouping OutputMathEditExpression OutputNamePacket OutputResponse OutputSizeLimit OutputStream Over OverBar OverDot Overflow OverHat Overlaps Overlay OverlayBox OverlayBoxOptions Overscript OverscriptBox OverscriptBoxOptions OverTilde OverVector OwenT OwnValues ' +
+      'PackingMethod PaddedForm Padding PadeApproximant PadLeft PadRight PageBreakAbove PageBreakBelow PageBreakWithin PageFooterLines PageFooters PageHeaderLines PageHeaders PageHeight PageRankCentrality PageWidth PairedBarChart PairedHistogram PairedSmoothHistogram PairedTTest PairedZTest PaletteNotebook PalettePath Pane PaneBox PaneBoxOptions Panel PanelBox PanelBoxOptions Paneled PaneSelector PaneSelectorBox PaneSelectorBoxOptions PaperWidth ParabolicCylinderD ParagraphIndent ParagraphSpacing ParallelArray ParallelCombine ParallelDo ParallelEvaluate Parallelization Parallelize ParallelMap ParallelNeeds ParallelProduct ParallelSubmit ParallelSum ParallelTable ParallelTry Parameter ParameterEstimator ParameterMixtureDistribution ParameterVariables ParametricFunction ParametricNDSolve ParametricNDSolveValue ParametricPlot ParametricPlot3D ParentConnect ParentDirectory ParentForm Parenthesize ParentList ParetoDistribution Part PartialCorrelationFunction PartialD ParticleData Partition PartitionsP PartitionsQ ParzenWindow PascalDistribution PassEventsDown PassEventsUp Paste PasteBoxFormInlineCells PasteButton Path PathGraph PathGraphQ Pattern PatternSequence PatternTest PauliMatrix PaulWavelet Pause PausedTime PDF PearsonChiSquareTest PearsonCorrelationTest PearsonDistribution PerformanceGoal PeriodicInterpolation Periodogram PeriodogramArray PermutationCycles PermutationCyclesQ PermutationGroup PermutationLength PermutationList PermutationListQ PermutationMax PermutationMin PermutationOrder PermutationPower PermutationProduct PermutationReplace Permutations PermutationSupport Permute PeronaMalikFilter Perpendicular PERTDistribution PetersenGraph PhaseMargins Pi Pick PIDData PIDDerivativeFilter PIDFeedforward PIDTune Piecewise PiecewiseExpand PieChart PieChart3D PillaiTrace PillaiTraceTest Pink Pivoting PixelConstrained PixelValue PixelValuePositions Placed Placeholder PlaceholderReplace Plain PlanarGraphQ Play PlayRange Plot Plot3D Plot3Matrix PlotDivision PlotJoined PlotLabel PlotLayout PlotLegends PlotMarkers PlotPoints PlotRange PlotRangeClipping PlotRangePadding PlotRegion PlotStyle Plus PlusMinus Pochhammer PodStates PodWidth Point Point3DBox PointBox PointFigureChart PointForm PointLegend PointSize PoissonConsulDistribution PoissonDistribution PoissonProcess PoissonWindow PolarAxes PolarAxesOrigin PolarGridLines PolarPlot PolarTicks PoleZeroMarkers PolyaAeppliDistribution PolyGamma Polygon Polygon3DBox Polygon3DBoxOptions PolygonBox PolygonBoxOptions PolygonHoleScale PolygonIntersections PolygonScale PolyhedronData PolyLog PolynomialExtendedGCD PolynomialForm PolynomialGCD PolynomialLCM PolynomialMod PolynomialQ PolynomialQuotient PolynomialQuotientRemainder PolynomialReduce PolynomialRemainder Polynomials PopupMenu PopupMenuBox PopupMenuBoxOptions PopupView PopupWindow Position Positive PositiveDefiniteMatrixQ PossibleZeroQ Postfix PostScript Power PowerDistribution PowerExpand PowerMod PowerModList ' +
+      'PowerSpectralDensity PowersRepresentations PowerSymmetricPolynomial Precedence PrecedenceForm Precedes PrecedesEqual PrecedesSlantEqual PrecedesTilde Precision PrecisionGoal PreDecrement PredictionRoot PreemptProtect PreferencesPath Prefix PreIncrement Prepend PrependTo PreserveImageOptions Previous PriceGraphDistribution PrimaryPlaceholder Prime PrimeNu PrimeOmega PrimePi PrimePowerQ PrimeQ Primes PrimeZetaP PrimitiveRoot PrincipalComponents PrincipalValue Print PrintAction PrintForm PrintingCopies PrintingOptions PrintingPageRange PrintingStartingPageNumber PrintingStyleEnvironment PrintPrecision PrintTemporary Prism PrismBox PrismBoxOptions PrivateCellOptions PrivateEvaluationOptions PrivateFontOptions PrivateFrontEndOptions PrivateNotebookOptions PrivatePaths Probability ProbabilityDistribution ProbabilityPlot ProbabilityPr ProbabilityScalePlot ProbitModelFit ProcessEstimator ProcessParameterAssumptions ProcessParameterQ ProcessStateDomain ProcessTimeDomain Product ProductDistribution ProductLog ProgressIndicator ProgressIndicatorBox ProgressIndicatorBoxOptions Projection Prolog PromptForm Properties Property PropertyList PropertyValue Proportion Proportional Protect Protected ProteinData Pruning PseudoInverse Purple Put PutAppend Pyramid PyramidBox PyramidBoxOptions ' +
+      'QBinomial QFactorial QGamma QHypergeometricPFQ QPochhammer QPolyGamma QRDecomposition QuadraticIrrationalQ Quantile QuantilePlot Quantity QuantityForm QuantityMagnitude QuantityQ QuantityUnit Quartics QuartileDeviation Quartiles QuartileSkewness QueueingNetworkProcess QueueingProcess QueueProperties Quiet Quit Quotient QuotientRemainder ' +
+      'RadialityCentrality RadicalBox RadicalBoxOptions RadioButton RadioButtonBar RadioButtonBox RadioButtonBoxOptions Radon RamanujanTau RamanujanTauL RamanujanTauTheta RamanujanTauZ Random RandomChoice RandomComplex RandomFunction RandomGraph RandomImage RandomInteger RandomPermutation RandomPrime RandomReal RandomSample RandomSeed RandomVariate RandomWalkProcess Range RangeFilter RangeSpecification RankedMax RankedMin Raster Raster3D Raster3DBox Raster3DBoxOptions RasterArray RasterBox RasterBoxOptions Rasterize RasterSize Rational RationalFunctions Rationalize Rationals Ratios Raw RawArray RawBoxes RawData RawMedium RayleighDistribution Re Read ReadList ReadProtected Real RealBlockDiagonalForm RealDigits RealExponent Reals Reap Record RecordLists RecordSeparators Rectangle RectangleBox RectangleBoxOptions RectangleChart RectangleChart3D RecurrenceFilter RecurrenceTable RecurringDigitsForm Red Reduce RefBox ReferenceLineStyle ReferenceMarkers ReferenceMarkerStyle Refine ReflectionMatrix ReflectionTransform Refresh RefreshRate RegionBinarize RegionFunction RegionPlot RegionPlot3D RegularExpression Regularization Reinstall Release ReleaseHold ReliabilityDistribution ReliefImage ReliefPlot Remove RemoveAlphaChannel RemoveAsynchronousTask Removed RemoveInputStreamMethod RemoveOutputStreamMethod RemoveProperty RemoveScheduledTask RenameDirectory RenameFile RenderAll RenderingOptions RenewalProcess RenkoChart Repeated RepeatedNull RepeatedString Replace ReplaceAll ReplaceHeldPart ReplaceImageValue ReplaceList ReplacePart ReplacePixelValue ReplaceRepeated Resampling Rescale RescalingTransform ResetDirectory ResetMenusPacket ResetScheduledTask Residue Resolve Rest Resultant ResumePacket Return ReturnExpressionPacket ReturnInputFormPacket ReturnPacket ReturnTextPacket Reverse ReverseBiorthogonalSplineWavelet ReverseElement ReverseEquilibrium ReverseGraph ReverseUpEquilibrium RevolutionAxis RevolutionPlot3D RGBColor RiccatiSolve RiceDistribution RidgeFilter RiemannR RiemannSiegelTheta RiemannSiegelZ Riffle Right RightArrow RightArrowBar RightArrowLeftArrow RightCosetRepresentative RightDownTeeVector RightDownVector RightDownVectorBar RightTee RightTeeArrow RightTeeVector RightTriangle RightTriangleBar RightTriangleEqual RightUpDownVector RightUpTeeVector RightUpVector RightUpVectorBar RightVector RightVectorBar RiskAchievementImportance RiskReductionImportance RogersTanimotoDissimilarity Root RootApproximant RootIntervals RootLocusPlot RootMeanSquare RootOfUnityQ RootReduce Roots RootSum Rotate RotateLabel RotateLeft RotateRight RotationAction RotationBox RotationBoxOptions RotationMatrix RotationTransform Round RoundImplies RoundingRadius Row RowAlignments RowBackgrounds RowBox RowHeights RowLines RowMinHeight RowReduce RowsEqual RowSpacings RSolve RudvalisGroupRu Rule RuleCondition RuleDelayed RuleForm RulerUnits Run RunScheduledTask RunThrough RuntimeAttributes RuntimeOptions RussellRaoDissimilarity ' +
+      'SameQ SameTest SampleDepth SampledSoundFunction SampledSoundList SampleRate SamplingPeriod SARIMAProcess SARMAProcess SatisfiabilityCount SatisfiabilityInstances SatisfiableQ Saturday Save Saveable SaveAutoDelete SaveDefinitions SawtoothWave Scale Scaled ScaleDivisions ScaledMousePosition ScaleOrigin ScalePadding ScaleRanges ScaleRangeStyle ScalingFunctions ScalingMatrix ScalingTransform Scan ScheduledTaskActiveQ ScheduledTaskData ScheduledTaskObject ScheduledTasks SchurDecomposition ScientificForm ScreenRectangle ScreenStyleEnvironment ScriptBaselineShifts ScriptLevel ScriptMinSize ScriptRules ScriptSizeMultipliers Scrollbars ScrollingOptions ScrollPosition Sec Sech SechDistribution SectionGrouping SectorChart SectorChart3D SectorOrigin SectorSpacing SeedRandom Select Selectable SelectComponents SelectedCells SelectedNotebook Selection SelectionAnimate SelectionCell SelectionCellCreateCell SelectionCellDefaultStyle SelectionCellParentStyle SelectionCreateCell SelectionDebuggerTag SelectionDuplicateCell SelectionEvaluate SelectionEvaluateCreateCell SelectionMove SelectionPlaceholder SelectionSetStyle SelectWithContents SelfLoops SelfLoopStyle SemialgebraicComponentInstances SendMail Sequence SequenceAlignment SequenceForm SequenceHold SequenceLimit Series SeriesCoefficient SeriesData SessionTime Set SetAccuracy SetAlphaChannel SetAttributes Setbacks SetBoxFormNamesPacket SetDelayed SetDirectory SetEnvironment SetEvaluationNotebook SetFileDate SetFileLoadingContext SetNotebookStatusLine SetOptions SetOptionsPacket SetPrecision SetProperty SetSelectedNotebook SetSharedFunction SetSharedVariable SetSpeechParametersPacket SetStreamPosition SetSystemOptions Setter SetterBar SetterBox SetterBoxOptions Setting SetValue Shading Shallow ShannonWavelet ShapiroWilkTest Share Sharpen ShearingMatrix ShearingTransform ShenCastanMatrix Short ShortDownArrow Shortest ShortestMatch ShortestPathFunction ShortLeftArrow ShortRightArrow ShortUpArrow Show ShowAutoStyles ShowCellBracket ShowCellLabel ShowCellTags ShowClosedCellArea ShowContents ShowControls ShowCursorTracker ShowGroupOpenCloseIcon ShowGroupOpener ShowInvisibleCharacters ShowPageBreaks ShowPredictiveInterface ShowSelection ShowShortBoxForm ShowSpecialCharacters ShowStringCharacters ShowSyntaxStyles ShrinkingDelay ShrinkWrapBoundingBox SiegelTheta SiegelTukeyTest Sign Signature SignedRankTest SignificanceLevel SignPadding SignTest SimilarityRules SimpleGraph SimpleGraphQ Simplify Sin Sinc SinghMaddalaDistribution SingleEvaluation SingleLetterItalics SingleLetterStyle SingularValueDecomposition SingularValueList SingularValuePlot SingularValues Sinh SinhIntegral SinIntegral SixJSymbol Skeleton SkeletonTransform SkellamDistribution Skewness SkewNormalDistribution Skip SliceDistribution Slider Slider2D Slider2DBox Slider2DBoxOptions SliderBox SliderBoxOptions SlideView Slot SlotSequence Small SmallCircle Smaller SmithDelayCompensator SmithWatermanSimilarity ' +
+      'SmoothDensityHistogram SmoothHistogram SmoothHistogram3D SmoothKernelDistribution SocialMediaData Socket SokalSneathDissimilarity Solve SolveAlways SolveDelayed Sort SortBy Sound SoundAndGraphics SoundNote SoundVolume Sow Space SpaceForm Spacer Spacings Span SpanAdjustments SpanCharacterRounding SpanFromAbove SpanFromBoth SpanFromLeft SpanLineThickness SpanMaxSize SpanMinSize SpanningCharacters SpanSymmetric SparseArray SpatialGraphDistribution Speak SpeakTextPacket SpearmanRankTest SpearmanRho Spectrogram SpectrogramArray Specularity SpellingCorrection SpellingDictionaries SpellingDictionariesPath SpellingOptions SpellingSuggestionsPacket Sphere SphereBox SphericalBesselJ SphericalBesselY SphericalHankelH1 SphericalHankelH2 SphericalHarmonicY SphericalPlot3D SphericalRegion SpheroidalEigenvalue SpheroidalJoiningFactor SpheroidalPS SpheroidalPSPrime SpheroidalQS SpheroidalQSPrime SpheroidalRadialFactor SpheroidalS1 SpheroidalS1Prime SpheroidalS2 SpheroidalS2Prime Splice SplicedDistribution SplineClosed SplineDegree SplineKnots SplineWeights Split SplitBy SpokenString Sqrt SqrtBox SqrtBoxOptions Square SquaredEuclideanDistance SquareFreeQ SquareIntersection SquaresR SquareSubset SquareSubsetEqual SquareSuperset SquareSupersetEqual SquareUnion SquareWave StabilityMargins StabilityMarginsStyle StableDistribution Stack StackBegin StackComplete StackInhibit StandardDeviation StandardDeviationFilter StandardForm Standardize StandbyDistribution Star StarGraph StartAsynchronousTask StartingStepSize StartOfLine StartOfString StartScheduledTask StartupSound StateDimensions StateFeedbackGains StateOutputEstimator StateResponse StateSpaceModel StateSpaceRealization StateSpaceTransform StationaryDistribution StationaryWaveletPacketTransform StationaryWaveletTransform StatusArea StatusCentrality StepMonitor StieltjesGamma StirlingS1 StirlingS2 StopAsynchronousTask StopScheduledTask StrataVariables StratonovichProcess StreamColorFunction StreamColorFunctionScaling StreamDensityPlot StreamPlot StreamPoints StreamPosition Streams StreamScale StreamStyle String StringBreak StringByteCount StringCases StringCount StringDrop StringExpression StringForm StringFormat StringFreeQ StringInsert StringJoin StringLength StringMatchQ StringPosition StringQ StringReplace StringReplaceList StringReplacePart StringReverse StringRotateLeft StringRotateRight StringSkeleton StringSplit StringTake StringToStream StringTrim StripBoxes StripOnInput StripWrapperBoxes StrokeForm StructuralImportance StructuredArray StructuredSelection StruveH StruveL Stub StudentTDistribution Style StyleBox StyleBoxAutoDelete StyleBoxOptions StyleData StyleDefinitions StyleForm StyleKeyMapping StyleMenuListing StyleNameDialogSettings StyleNames StylePrint StyleSheetPath Subfactorial Subgraph SubMinus SubPlus SubresultantPolynomialRemainders ' +
+      'SubresultantPolynomials Subresultants Subscript SubscriptBox SubscriptBoxOptions Subscripted Subset SubsetEqual Subsets SubStar Subsuperscript SubsuperscriptBox SubsuperscriptBoxOptions Subtract SubtractFrom SubValues Succeeds SucceedsEqual SucceedsSlantEqual SucceedsTilde SuchThat Sum SumConvergence Sunday SuperDagger SuperMinus SuperPlus Superscript SuperscriptBox SuperscriptBoxOptions Superset SupersetEqual SuperStar Surd SurdForm SurfaceColor SurfaceGraphics SurvivalDistribution SurvivalFunction SurvivalModel SurvivalModelFit SuspendPacket SuzukiDistribution SuzukiGroupSuz SwatchLegend Switch Symbol SymbolName SymletWavelet Symmetric SymmetricGroup SymmetricMatrixQ SymmetricPolynomial SymmetricReduction Symmetrize SymmetrizedArray SymmetrizedArrayRules SymmetrizedDependentComponents SymmetrizedIndependentComponents SymmetrizedReplacePart SynchronousInitialization SynchronousUpdating Syntax SyntaxForm SyntaxInformation SyntaxLength SyntaxPacket SyntaxQ SystemDialogInput SystemException SystemHelpPath SystemInformation SystemInformationData SystemOpen SystemOptions SystemsModelDelay SystemsModelDelayApproximate SystemsModelDelete SystemsModelDimensions SystemsModelExtract SystemsModelFeedbackConnect SystemsModelLabels SystemsModelOrder SystemsModelParallelConnect SystemsModelSeriesConnect SystemsModelStateFeedbackConnect SystemStub ' +
+      'Tab TabFilling Table TableAlignments TableDepth TableDirections TableForm TableHeadings TableSpacing TableView TableViewBox TabSpacings TabView TabViewBox TabViewBoxOptions TagBox TagBoxNote TagBoxOptions TaggingRules TagSet TagSetDelayed TagStyle TagUnset Take TakeWhile Tally Tan Tanh TargetFunctions TargetUnits TautologyQ TelegraphProcess TemplateBox TemplateBoxOptions TemplateSlotSequence TemporalData Temporary TemporaryVariable TensorContract TensorDimensions TensorExpand TensorProduct TensorQ TensorRank TensorReduce TensorSymmetry TensorTranspose TensorWedge Tetrahedron TetrahedronBox TetrahedronBoxOptions TeXForm TeXSave Text Text3DBox Text3DBoxOptions TextAlignment TextBand TextBoundingBox TextBox TextCell TextClipboardType TextData TextForm TextJustification TextLine TextPacket TextParagraph TextRecognize TextRendering TextStyle Texture TextureCoordinateFunction TextureCoordinateScaling Therefore ThermometerGauge Thick Thickness Thin Thinning ThisLink ThompsonGroupTh Thread ThreeJSymbol Threshold Through Throw Thumbnail Thursday Ticks TicksStyle Tilde TildeEqual TildeFullEqual TildeTilde TimeConstrained TimeConstraint Times TimesBy TimeSeriesForecast TimeSeriesInvertibility TimeUsed TimeValue TimeZone Timing Tiny TitleGrouping TitsGroupT ToBoxes ToCharacterCode ToColor ToContinuousTimeModel ToDate ToDiscreteTimeModel ToeplitzMatrix ToExpression ToFileName Together Toggle ToggleFalse Toggler TogglerBar TogglerBox TogglerBoxOptions ToHeldExpression ToInvertibleTimeSeries TokenWords Tolerance ToLowerCase ToNumberField TooBig Tooltip TooltipBox TooltipBoxOptions TooltipDelay TooltipStyle Top TopHatTransform TopologicalSort ToRadicals ToRules ToString Total TotalHeight TotalVariationFilter TotalWidth TouchscreenAutoZoom TouchscreenControlPlacement ToUpperCase Tr Trace TraceAbove TraceAction TraceBackward TraceDepth TraceDialog TraceForward TraceInternal TraceLevel TraceOff TraceOn TraceOriginal TracePrint TraceScan TrackedSymbols TradingChart TraditionalForm TraditionalFunctionNotation TraditionalNotation TraditionalOrder TransferFunctionCancel TransferFunctionExpand TransferFunctionFactor TransferFunctionModel TransferFunctionPoles TransferFunctionTransform TransferFunctionZeros TransformationFunction TransformationFunctions TransformationMatrix TransformedDistribution TransformedField Translate TranslationTransform TransparentColor Transpose TreeForm TreeGraph TreeGraphQ TreePlot TrendStyle TriangleWave TriangularDistribution Trig TrigExpand TrigFactor TrigFactorList Trigger TrigReduce TrigToExp TrimmedMean True TrueQ TruncatedDistribution TsallisQExponentialDistribution TsallisQGaussianDistribution TTest Tube TubeBezierCurveBox TubeBezierCurveBoxOptions TubeBox TubeBSplineCurveBox TubeBSplineCurveBoxOptions Tuesday TukeyLambdaDistribution TukeyWindow Tuples TuranGraph TuringMachine ' +
+      'Transparent ' +
+      'UnateQ Uncompress Undefined UnderBar Underflow Underlined Underoverscript UnderoverscriptBox UnderoverscriptBoxOptions Underscript UnderscriptBox UnderscriptBoxOptions UndirectedEdge UndirectedGraph UndirectedGraphQ UndocumentedTestFEParserPacket UndocumentedTestGetSelectionPacket Unequal Unevaluated UniformDistribution UniformGraphDistribution UniformSumDistribution Uninstall Union UnionPlus Unique UnitBox UnitConvert UnitDimensions Unitize UnitRootTest UnitSimplify UnitStep UnitTriangle UnitVector Unprotect UnsameQ UnsavedVariables Unset UnsetShared UntrackedVariables Up UpArrow UpArrowBar UpArrowDownArrow Update UpdateDynamicObjects UpdateDynamicObjectsSynchronous UpdateInterval UpDownArrow UpEquilibrium UpperCaseQ UpperLeftArrow UpperRightArrow UpperTriangularize Upsample UpSet UpSetDelayed UpTee UpTeeArrow UpValues URL URLFetch URLFetchAsynchronous URLSave URLSaveAsynchronous UseGraphicsRange Using UsingFrontEnd ' +
+      'V2Get ValidationLength Value ValueBox ValueBoxOptions ValueForm ValueQ ValuesData Variables Variance VarianceEquivalenceTest VarianceEstimatorFunction VarianceGammaDistribution VarianceTest VectorAngle VectorColorFunction VectorColorFunctionScaling VectorDensityPlot VectorGlyphData VectorPlot VectorPlot3D VectorPoints VectorQ Vectors VectorScale VectorStyle Vee Verbatim Verbose VerboseConvertToPostScriptPacket VerifyConvergence VerifySolutions VerifyTestAssumptions Version VersionNumber VertexAdd VertexCapacity VertexColors VertexComponent VertexConnectivity VertexCoordinateRules VertexCoordinates VertexCorrelationSimilarity VertexCosineSimilarity VertexCount VertexCoverQ VertexDataCoordinates VertexDegree VertexDelete VertexDiceSimilarity VertexEccentricity VertexInComponent VertexInDegree VertexIndex VertexJaccardSimilarity VertexLabeling VertexLabels VertexLabelStyle VertexList VertexNormals VertexOutComponent VertexOutDegree VertexQ VertexRenderingFunction VertexReplace VertexShape VertexShapeFunction VertexSize VertexStyle VertexTextureCoordinates VertexWeight Vertical VerticalBar VerticalForm VerticalGauge VerticalSeparator VerticalSlider VerticalTilde ViewAngle ViewCenter ViewMatrix ViewPoint ViewPointSelectorSettings ViewPort ViewRange ViewVector ViewVertical VirtualGroupData Visible VisibleCell VoigtDistribution VonMisesDistribution ' +
+      'WaitAll WaitAsynchronousTask WaitNext WaitUntil WakebyDistribution WalleniusHypergeometricDistribution WaringYuleDistribution WatershedComponents WatsonUSquareTest WattsStrogatzGraphDistribution WaveletBestBasis WaveletFilterCoefficients WaveletImagePlot WaveletListPlot WaveletMapIndexed WaveletMatrixPlot WaveletPhi WaveletPsi WaveletScale WaveletScalogram WaveletThreshold WeaklyConnectedComponents WeaklyConnectedGraphQ WeakStationarity WeatherData WeberE Wedge Wednesday WeibullDistribution WeierstrassHalfPeriods WeierstrassInvariants WeierstrassP WeierstrassPPrime WeierstrassSigma WeierstrassZeta WeightedAdjacencyGraph WeightedAdjacencyMatrix WeightedData WeightedGraphQ Weights WelchWindow WheelGraph WhenEvent Which While White Whitespace WhitespaceCharacter WhittakerM WhittakerW WienerFilter WienerProcess WignerD WignerSemicircleDistribution WilksW WilksWTest WindowClickSelect WindowElements WindowFloating WindowFrame WindowFrameElements WindowMargins WindowMovable WindowOpacity WindowSelected WindowSize WindowStatusArea WindowTitle WindowToolbars WindowWidth With WolframAlpha WolframAlphaDate WolframAlphaQuantity WolframAlphaResult Word WordBoundary WordCharacter WordData WordSearch WordSeparators WorkingPrecision Write WriteString Wronskian ' +
+      'XMLElement XMLObject Xnor Xor ' +
+      'Yellow YuleDissimilarity ' +
+      'ZernikeR ZeroSymmetric ZeroTest ZeroWidthTimes Zeta ZetaZero ZipfDistribution ZTest ZTransform ' +
+      '$Aborted $ActivationGroupID $ActivationKey $ActivationUserRegistered $AddOnsDirectory $AssertFunction $Assumptions $AsynchronousTask $BaseDirectory $BatchInput $BatchOutput $BoxForms $ByteOrdering $Canceled $CharacterEncoding $CharacterEncodings $CommandLine $CompilationTarget $ConditionHold $ConfiguredKernels $Context $ContextPath $ControlActiveSetting $CreationDate $CurrentLink $DateStringFormat $DefaultFont $DefaultFrontEnd $DefaultImagingDevice $DefaultPath $Display $DisplayFunction $DistributedContexts $DynamicEvaluation $Echo $Epilog $ExportFormats $Failed $FinancialDataSource $FormatType $FrontEnd $FrontEndSession $GeoLocation $HistoryLength $HomeDirectory $HTTPCookies $IgnoreEOF $ImagingDevices $ImportFormats $InitialDirectory $Input $InputFileName $InputStreamMethods $Inspector $InstallationDate $InstallationDirectory $InterfaceEnvironment $IterationLimit $KernelCount $KernelID $Language $LaunchDirectory $LibraryPath $LicenseExpirationDate $LicenseID $LicenseProcesses $LicenseServer $LicenseSubprocesses $LicenseType $Line $Linked $LinkSupported $LoadedFiles $MachineAddresses $MachineDomain $MachineDomains $MachineEpsilon $MachineID $MachineName $MachinePrecision $MachineType $MaxExtraPrecision $MaxLicenseProcesses $MaxLicenseSubprocesses $MaxMachineNumber $MaxNumber $MaxPiecewiseCases $MaxPrecision $MaxRootDegree $MessageGroups $MessageList $MessagePrePrint $Messages $MinMachineNumber $MinNumber $MinorReleaseNumber $MinPrecision $ModuleNumber $NetworkLicense $NewMessage $NewSymbol $Notebooks $NumberMarks $Off $OperatingSystem $Output $OutputForms $OutputSizeLimit $OutputStreamMethods $Packages $ParentLink $ParentProcessID $PasswordFile $PatchLevelID $Path $PathnameSeparator $PerformanceGoal $PipeSupported $Post $Pre $PreferencesDirectory $PrePrint $PreRead $PrintForms $PrintLiteral $ProcessID $ProcessorCount $ProcessorType $ProductInformation $ProgramName $RandomState $RecursionLimit $ReleaseNumber $RootDirectory $ScheduledTask $ScriptCommandLine $SessionID $SetParentLink $SharedFunctions $SharedVariables $SoundDisplay $SoundDisplayFunction $SuppressInputFormHeads $SynchronousEvaluation $SyntaxHandler $System $SystemCharacterEncoding $SystemID $SystemWordLength $TemporaryDirectory $TemporaryPrefix $TextStyle $TimedOut $TimeUnit $TimeZone $TopDirectory $TraceOff $TraceOn $TracePattern $TracePostAction $TracePreAction $Urgent $UserAddOnsDirectory $UserBaseDirectory $UserDocumentsDirectory $UserName $Version $VersionNumber',
+    contains: [
+      {
+        className: "comment",
+        begin: /\(\*/, end: /\*\)/
+      },
+      hljs.APOS_STRING_MODE,
+      hljs.QUOTE_STRING_MODE,
+      hljs.C_NUMBER_MODE,
+      {
+        className: 'list',
+        begin: /\{/, end: /\}/,
+        illegal: /:/
+      }
+    ]
+  };
+};
+},{}],53:[function(require,module,exports){
 module.exports = function(hljs) {
 
   var COMMON_CONTAINS = [
@@ -5609,8 +5782,7 @@ module.exports = function(hljs) {
     {
       className: 'string',
       begin: '\'', end: '\'',
-      contains: [hljs.BACKSLASH_ESCAPE, {begin: '\'\''}],
-      relevance: 0
+      contains: [hljs.BACKSLASH_ESCAPE, {begin: '\'\''}]
     }
   ];
 
@@ -5639,13 +5811,9 @@ module.exports = function(hljs) {
     contains: [
       {
         className: 'function',
-        beginWithKeyword: true, end: '$',
-        keywords: 'function',
+        beginKeywords: 'function', end: '$',
         contains: [
-          {
-              className: 'title',
-              begin: hljs.UNDERSCORE_IDENT_RE
-          },
+          hljs.UNDERSCORE_TITLE_MODE,
           {
               className: 'params',
               begin: '\\(', end: '\\)'
@@ -5658,17 +5826,20 @@ module.exports = function(hljs) {
       },
       {
         className: 'transposed_variable',
-        begin: '[a-zA-Z_][a-zA-Z_0-9]*(\'+[\\.\']*|[\\.\']+)', end: ''
+        begin: '[a-zA-Z_][a-zA-Z_0-9]*(\'+[\\.\']*|[\\.\']+)', end: '',
+        relevance: 0
       },
       {
         className: 'matrix',
         begin: '\\[', end: '\\]\'*[\\.\']*',
-        contains: COMMON_CONTAINS
+        contains: COMMON_CONTAINS,
+        relevance: 0
       },
       {
         className: 'cell',
         begin: '\\{', end: '\\}\'*[\\.\']*',
-        contains: COMMON_CONTAINS
+        contains: COMMON_CONTAINS,
+        illegal: /:/
       },
       {
         className: 'comment',
@@ -5677,7 +5848,7 @@ module.exports = function(hljs) {
     ].concat(COMMON_CONTAINS)
   };
 };
-},{}],50:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords:
@@ -5718,7 +5889,7 @@ module.exports = function(hljs) {
       'cpSolverTypes cpTool cpUpdateClothUVs createDisplayLayer createDrawCtx createEditor ' +
       'createLayeredPsdFile createMotionField createNewShelf createNode createRenderLayer ' +
       'createSubdivRegion cross crossProduct ctxAbort ctxCompletion ctxEditMode ctxTraverse ' +
-      'currentCtx currentTime currentTimeCtx currentUnit currentUnit curve curveAddPtCtx ' +
+      'currentCtx currentTime currentTimeCtx currentUnit curve curveAddPtCtx ' +
       'curveCVCtx curveEPCtx curveEditorCtx curveIntersect curveMoveEPCtx curveOnSurface ' +
       'curveSketchCtx cutKey cycleCheck cylinder dagPose date defaultLightListCheckBox ' +
       'defaultNavigation defineDataServer defineVirtualDevice deformer deg_to_rad delete ' +
@@ -5735,7 +5906,7 @@ module.exports = function(hljs) {
       'dynamicLoad editAttrLimits editDisplayLayerGlobals editDisplayLayerMembers ' +
       'editRenderLayerAdjustment editRenderLayerGlobals editRenderLayerMembers editor ' +
       'editorTemplate effector emit emitter enableDevice encodeString endString endsWith env ' +
-      'equivalent equivalentTol erf error eval eval evalDeferred evalEcho event ' +
+      'equivalent equivalentTol erf error eval evalDeferred evalEcho event ' +
       'exactWorldBoundingBox exclusiveLightCheckBox exec executeForEachObject exists exp ' +
       'expression expressionEditorListen extendCurve extendSurface extrude fcheck fclose feof ' +
       'fflush fgetline fgetword file fileBrowserDialog fileDialog fileExtension fileInfo ' +
@@ -5896,19 +6067,18 @@ module.exports = function(hljs) {
       },
       {
         className: 'variable',
-        begin: '\\$\\d',
-        relevance: 5
-      },
-      {
-        className: 'variable',
-        begin: '[\\$\\%\\@\\*](\\^\\w\\b|#\\w+|[^\\s\\w{]|{\\w+}|\\w+)'
+        variants: [
+          {begin: '\\$\\d'},
+          {begin: '[\\$\\%\\@](\\^\\w\\b|#\\w+|[^\\s\\w{]|{\\w+}|\\w+)'},
+          {begin: '\\*(\\^\\w\\b|#\\w+|[^\\s\\w{]|{\\w+}|\\w+)', relevance: 0}
+        ]
       },
       hljs.C_LINE_COMMENT_MODE,
       hljs.C_BLOCK_COMMENT_MODE
     ]
   };
 };
-},{}],51:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: [
@@ -5928,22 +6098,19 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],52:[function(require,module,exports){
+},{}],56:[function(require,module,exports){
 module.exports = function(hljs) {
-  var VARS = [
-    {
-      className: 'variable', begin: '\\$\\d+'
-    },
-    {
-      className: 'variable', begin: '\\${', end: '}'
-    },
-    {
-      className: 'variable', begin: '[\\$\\@]' + hljs.UNDERSCORE_IDENT_RE
-    }
-  ];
+  var VAR = {
+    className: 'variable',
+    variants: [
+      {begin: /\$\d+/},
+      {begin: /\$\{/, end: /}/},
+      {begin: '[\\$\\@]' + hljs.UNDERSCORE_IDENT_RE}
+    ]
+  };
   var DEFAULT = {
     endsWithParent: true,
-    lexems: '[a-z/_]+',
+    lexemes: '[a-z/_]+',
     keywords: {
       built_in:
         'on off yes no true false none blocked debug info notice warn error crit ' +
@@ -5955,15 +6122,11 @@ module.exports = function(hljs) {
       hljs.HASH_COMMENT_MODE,
       {
         className: 'string',
-        begin: '"', end: '"',
-        contains: [hljs.BACKSLASH_ESCAPE].concat(VARS),
-        relevance: 0
-      },
-      {
-        className: 'string',
-        begin: "'", end: "'",
-        contains: [hljs.BACKSLASH_ESCAPE].concat(VARS),
-        relevance: 0
+        contains: [hljs.BACKSLASH_ESCAPE, VAR],
+        variants: [
+          {begin: /"/, end: /"/},
+          {begin: /'/, end: /'/}
+        ]
       },
       {
         className: 'url',
@@ -5971,26 +6134,16 @@ module.exports = function(hljs) {
       },
       {
         className: 'regexp',
-        begin: "\\s\\^", end: "\\s|{|;", returnEnd: true,
-        contains: [hljs.BACKSLASH_ESCAPE].concat(VARS)
-      },
-      // regexp locations (~, ~*)
-      {
-        className: 'regexp',
-        begin: "~\\*?\\s+", end: "\\s|{|;", returnEnd: true,
-        contains: [hljs.BACKSLASH_ESCAPE].concat(VARS)
-      },
-      // *.example.com
-      {
-        className: 'regexp',
-        begin: "\\*(\\.[a-z\\-]+)+",
-        contains: [hljs.BACKSLASH_ESCAPE].concat(VARS)
-      },
-      // sub.example.*
-      {
-        className: 'regexp',
-        begin: "([a-z\\-]+\\.)+\\*",
-        contains: [hljs.BACKSLASH_ESCAPE].concat(VARS)
+        contains: [hljs.BACKSLASH_ESCAPE, VAR],
+        variants: [
+          {begin: "\\s\\^", end: "\\s|{|;", returnEnd: true},
+          // regexp locations (~, ~*)
+          {begin: "~\\*?\\s+", end: "\\s|{|;", returnEnd: true},
+          // *.example.com
+          {begin: "\\*(\\.[a-z\\-]+)+"},
+          // sub.example.*
+          {begin: "([a-z\\-]+\\.)+\\*"}
+        ]
       },
       // IP
       {
@@ -6002,8 +6155,9 @@ module.exports = function(hljs) {
         className: 'number',
         begin: '\\b\\d+[kKmMgGdshdwy]*\\b',
         relevance: 0
-      }
-    ].concat(VARS)
+      },
+      VAR
+    ]
   };
 
   return {
@@ -6012,11 +6166,7 @@ module.exports = function(hljs) {
       {
         begin: hljs.UNDERSCORE_IDENT_RE + '\\s', end: ';|{', returnBegin: true,
         contains: [
-          {
-            className: 'title',
-            begin: hljs.UNDERSCORE_IDENT_RE,
-            starts: DEFAULT
-          }
+          hljs.inherit(hljs.UNDERSCORE_TITLE_MODE, {starts: DEFAULT})
         ],
         relevance: 0
       }
@@ -6024,17 +6174,18 @@ module.exports = function(hljs) {
     illegal: '[^\\s\\}]'
   };
 };
-},{}],53:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 module.exports = function(hljs) {
   var OBJC_KEYWORDS = {
     keyword:
-      'int float while private char catch export sizeof typedef const struct for union ' +
-      'unsigned long volatile static protected bool mutable if public do return goto void ' +
-      'enum else break extern asm case short default double throw register explicit ' +
-      'signed typename try this switch continue wchar_t inline readonly assign property ' +
-      'self synchronized end synthesize id optional required ' +
-      'nonatomic super unichar finally dynamic IBOutlet IBAction selector strong ' +
-      'weak readonly',
+      'int float while char export sizeof typedef const struct for union ' +
+      'unsigned long volatile static bool mutable if do return goto void ' +
+      'enum else break extern asm case short default double register explicit ' +
+      'signed typename this switch continue wchar_t inline readonly assign ' +
+      'self synchronized id ' +
+      'nonatomic super unichar IBOutlet IBAction strong weak ' +
+      '@private @protected @public @try @property @end @throw @catch @finally ' +
+      '@synthesize @dynamic @selector @optional @required',
     literal:
     	'false true FALSE TRUE nil YES NO NULL',
     built_in:
@@ -6052,8 +6203,10 @@ module.exports = function(hljs) {
       'UIInterfaceOrientation MPMoviePlayerController dispatch_once_t ' +
       'dispatch_queue_t dispatch_sync dispatch_async dispatch_once'
   };
+  var LEXEMES = /[a-zA-Z@][a-zA-Z0-9_]*/;
+  var CLASS_KEYWORDS = '@interface @class @protocol @implementation';
   return {
-    keywords: OBJC_KEYWORDS,
+    keywords: OBJC_KEYWORDS, lexemes: LEXEMES,
     illegal: '</',
     contains: [
       hljs.C_LINE_COMMENT_MODE,
@@ -6091,13 +6244,10 @@ module.exports = function(hljs) {
       },
       {
         className: 'class',
-        beginWithKeyword: true,
-        end: '({|$)',
-        keywords: 'interface class protocol implementation',
-        contains: [{
-          className: 'id',
-          begin: hljs.UNDERSCORE_IDENT_RE
-        }
+        begin: '(' + CLASS_KEYWORDS.split(' ').join('|') + ')\\b', end: '({|$)',
+        keywords: CLASS_KEYWORDS, lexemes: LEXEMES,
+        contains: [
+          hljs.UNDERSCORE_TITLE_MODE
         ]
       },
       {
@@ -6108,7 +6258,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],54:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -6135,13 +6285,9 @@ module.exports = function(hljs) {
       },
       {
         className: 'class',
-        beginWithKeyword: true, end: '\\(|=|$',
-        keywords: 'type',
+        beginKeywords: 'type', end: '\\(|=|$',
         contains: [
-          {
-            className: 'title',
-            begin: hljs.UNDERSCORE_IDENT_RE
-          }
+          hljs.UNDERSCORE_TITLE_MODE
         ]
       },
       {
@@ -6155,7 +6301,72 @@ module.exports = function(hljs) {
     ]
   }
 };
-},{}],55:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
+module.exports = function(hljs) {
+  var OXYGENE_KEYWORDS = 'abstract add and array as asc aspect assembly async begin break block by case class concat const copy constructor continue '+
+    'create default delegate desc distinct div do downto dynamic each else empty end ensure enum equals event except exit extension external false '+
+	'final finalize finalizer finally flags for forward from function future global group has if implementation implements implies in index inherited'+
+	' inline interface into invariants is iterator join locked locking loop matching method mod module namespace nested new nil not notify nullable of '+
+	'old on operator or order out override parallel params partial pinned private procedure property protected public queryable raise read readonly '+
+	'record reintroduce remove repeat require result reverse sealed select self sequence set shl shr skip static step soft take then to true try tuple '+
+	'type union unit unsafe until uses using var virtual raises volatile where while with write xor yield await mapped deprecated stdcall cdecl pascal '+
+	'register safecall overload library platform reference packed strict published autoreleasepool selector strong weak unretained';
+  var CURLY_COMMENT =  {
+    className: 'comment',
+    begin: '{', end: '}',
+    relevance: 0
+  };
+  var PAREN_COMMENT = {
+    className: 'comment',
+    begin: '\\(\\*', end: '\\*\\)',
+    relevance: 10
+  };
+  var STRING = {
+    className: 'string',
+    begin: '\'', end: '\'',
+    contains: [{begin: '\'\''}]
+  };
+  var CHAR_STRING = {
+    className: 'string', begin: '(#\\d+)+'
+  };
+  var FUNCTION = {
+    className: 'function',
+    beginKeywords: 'function constructor destructor procedure method', end: '[:;]',
+    keywords: 'function constructor|10 destructor|10 procedure|10 method|10',
+    contains: [
+      hljs.TITLE_MODE,
+      {
+        className: 'params',
+        begin: '\\(', end: '\\)',
+        keywords: OXYGENE_KEYWORDS,
+        contains: [STRING, CHAR_STRING]
+      },
+      CURLY_COMMENT, PAREN_COMMENT
+    ]
+  };
+  return {
+    case_insensitive: true,
+    keywords: OXYGENE_KEYWORDS,
+    illegal: '("|\\$[G-Zg-z]|\\/\\*|</)',
+    contains: [
+      CURLY_COMMENT, PAREN_COMMENT, hljs.C_LINE_COMMENT_MODE,
+      STRING, CHAR_STRING,
+      hljs.NUMBER_MODE,
+      FUNCTION,
+      {
+        className: 'class',
+        begin: '=\\bclass\\b', end: 'end;',
+        keywords: OXYGENE_KEYWORDS,
+        contains: [
+          STRING, CHAR_STRING,
+          CURLY_COMMENT, PAREN_COMMENT, hljs.C_LINE_COMMENT_MODE,
+          FUNCTION
+        ]
+      }
+    ]
+  };
+};
+},{}],60:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     subLanguage: 'xml', relevance: 0,
@@ -6200,7 +6411,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],56:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 module.exports = function(hljs) {
   var PERL_KEYWORDS = 'getpwent getservent quotemeta msgrcv scalar kill dbmclose undef lc ' +
     'ma syswrite tr send umask sysopen shmwrite vec qx utime local oct semctl localtime ' +
@@ -6224,23 +6435,18 @@ module.exports = function(hljs) {
   var SUBST = {
     className: 'subst',
     begin: '[$@]\\{', end: '\\}',
-    keywords: PERL_KEYWORDS,
-    relevance: 10
+    keywords: PERL_KEYWORDS
   };
-  var VAR1 = {
-    className: 'variable',
-    begin: '\\$\\d'
-  };
-  var VAR2 = {
-    className: 'variable',
-    begin: '[\\$\\%\\@\\*](\\^\\w\\b|#\\w+(\\:\\:\\w+)*|[^\\s\\w{]|{\\w+}|\\w+(\\:\\:\\w*)*)'
-  };
-  var STRING_CONTAINS = [hljs.BACKSLASH_ESCAPE, SUBST, VAR1, VAR2];
   var METHOD = {
-    begin: '->',
-    contains: [
-      {begin: hljs.IDENT_RE},
-      {begin: '{', end: '}'}
+    begin: '->{', end: '}'
+    // contains defined later
+  };
+  var VAR = {
+    className: 'variable',
+    variants: [
+      {begin: /\$\d/},
+      {begin: /[\$\%\@\*](\^\w\b|#\w+(\:\:\w+)*|{\w+}|\w+(\:\:\w*)*)/},
+      {begin: /[\$\%\@\*][^\s\w{]/, relevance: 0}
     ]
   };
   var COMMENT = {
@@ -6248,8 +6454,9 @@ module.exports = function(hljs) {
     begin: '^(__END__|__DATA__)', end: '\\n$',
     relevance: 5
   }
+  var STRING_CONTAINS = [hljs.BACKSLASH_ESCAPE, SUBST, VAR];
   var PERL_DEFAULT_CONTAINS = [
-    VAR1, VAR2,
+    VAR,
     hljs.HASH_COMMENT_MODE,
     COMMENT,
     {
@@ -6259,66 +6466,54 @@ module.exports = function(hljs) {
     METHOD,
     {
       className: 'string',
-      begin: 'q[qwxr]?\\s*\\(', end: '\\)',
       contains: STRING_CONTAINS,
-      relevance: 5
-    },
-    {
-      className: 'string',
-      begin: 'q[qwxr]?\\s*\\[', end: '\\]',
-      contains: STRING_CONTAINS,
-      relevance: 5
-    },
-    {
-      className: 'string',
-      begin: 'q[qwxr]?\\s*\\{', end: '\\}',
-      contains: STRING_CONTAINS,
-      relevance: 5
-    },
-    {
-      className: 'string',
-      begin: 'q[qwxr]?\\s*\\|', end: '\\|',
-      contains: STRING_CONTAINS,
-      relevance: 5
-    },
-    {
-      className: 'string',
-      begin: 'q[qwxr]?\\s*\\<', end: '\\>',
-      contains: STRING_CONTAINS,
-      relevance: 5
-    },
-    {
-      className: 'string',
-      begin: 'qw\\s+q', end: 'q',
-      contains: STRING_CONTAINS,
-      relevance: 5
-    },
-    {
-      className: 'string',
-      begin: '\'', end: '\'',
-      contains: [hljs.BACKSLASH_ESCAPE],
-      relevance: 0
-    },
-    {
-      className: 'string',
-      begin: '"', end: '"',
-      contains: STRING_CONTAINS,
-      relevance: 0
-    },
-    {
-      className: 'string',
-      begin: '`', end: '`',
-      contains: [hljs.BACKSLASH_ESCAPE]
-    },
-    {
-      className: 'string',
-      begin: '{\\w+}',
-      relevance: 0
-    },
-    {
-      className: 'string',
-      begin: '\-?\\w+\\s*\\=\\>',
-      relevance: 0
+      variants: [
+        {
+          begin: 'q[qwxr]?\\s*\\(', end: '\\)',
+          relevance: 5
+        },
+        {
+          begin: 'q[qwxr]?\\s*\\[', end: '\\]',
+          relevance: 5
+        },
+        {
+          begin: 'q[qwxr]?\\s*\\{', end: '\\}',
+          relevance: 5
+        },
+        {
+          begin: 'q[qwxr]?\\s*\\|', end: '\\|',
+          relevance: 5
+        },
+        {
+          begin: 'q[qwxr]?\\s*\\<', end: '\\>',
+          relevance: 5
+        },
+        {
+          begin: 'qw\\s+q', end: 'q',
+          relevance: 5
+        },
+        {
+          begin: '\'', end: '\'',
+          contains: [hljs.BACKSLASH_ESCAPE]
+        },
+        {
+          begin: '"', end: '"'
+        },
+        {
+          begin: '`', end: '`',
+          contains: [hljs.BACKSLASH_ESCAPE]
+        },
+        {
+          begin: '{\\w+}',
+          contains: [],
+          relevance: 0
+        },
+        {
+          begin: '\-?\\w+\\s*\\=\\>',
+          contains: [],
+          relevance: 0
+        }
+      ]
     },
     {
       className: 'number',
@@ -6326,7 +6521,7 @@ module.exports = function(hljs) {
       relevance: 0
     },
     { // regexp container
-      begin: '(' + hljs.RE_STARTERS_RE + '|\\b(split|return|print|reverse|grep)\\b)\\s*',
+      begin: '(\\/\\/|' + hljs.RE_STARTERS_RE + '|\\b(split|return|print|reverse|grep)\\b)\\s*',
       keywords: 'split return print reverse grep',
       relevance: 0,
       contains: [
@@ -6347,8 +6542,7 @@ module.exports = function(hljs) {
     },
     {
       className: 'sub',
-      beginWithKeyword: true, end: '(\\s*\\(.*?\\))?[;{]',
-      keywords: 'sub',
+      beginKeywords: 'sub', end: '(\\s*\\(.*?\\))?[;{]',
       relevance: 5
     },
     {
@@ -6358,47 +6552,46 @@ module.exports = function(hljs) {
     }
   ];
   SUBST.contains = PERL_DEFAULT_CONTAINS;
-  METHOD.contains[1].contains = PERL_DEFAULT_CONTAINS;
+  METHOD.contains = PERL_DEFAULT_CONTAINS;
 
   return {
     keywords: PERL_KEYWORDS,
     contains: PERL_DEFAULT_CONTAINS
   };
 };
-},{}],57:[function(require,module,exports){
+},{}],62:[function(require,module,exports){
 module.exports = function(hljs) {
   var VARIABLE = {
     className: 'variable', begin: '\\$+[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*'
   };
-  var STRINGS = [
-    hljs.inherit(hljs.APOS_STRING_MODE, {illegal: null}),
-    hljs.inherit(hljs.QUOTE_STRING_MODE, {illegal: null}),
-    {
-      className: 'string',
-      begin: 'b"', end: '"',
-      contains: [hljs.BACKSLASH_ESCAPE]
-    },
-    {
-      className: 'string',
-      begin: 'b\'', end: '\'',
-      contains: [hljs.BACKSLASH_ESCAPE]
-    }
-  ];
-  var NUMBERS = [hljs.BINARY_NUMBER_MODE, hljs.C_NUMBER_MODE];
-  var TITLE = {
-    className: 'title', begin: hljs.UNDERSCORE_IDENT_RE
+  var PREPROCESSOR = {
+    className: 'preprocessor', begin: /<\?(php)?|\?>/
   };
+  var STRING = {
+    className: 'string',
+    contains: [hljs.BACKSLASH_ESCAPE, PREPROCESSOR],
+    variants: [
+      {
+        begin: 'b"', end: '"'
+      },
+      {
+        begin: 'b\'', end: '\''
+      },
+      hljs.inherit(hljs.APOS_STRING_MODE, {illegal: null}),
+      hljs.inherit(hljs.QUOTE_STRING_MODE, {illegal: null})
+    ]
+  };
+  var NUMBER = {variants: [hljs.BINARY_NUMBER_MODE, hljs.C_NUMBER_MODE]};
   return {
     case_insensitive: true,
-    lexems: hljs.UNDERSCORE_IDENT_RE,
     keywords:
       'and include_once list abstract global private echo interface as static endswitch ' +
       'array null if endwhile or const for endforeach self var while isset public ' +
       'protected exit foreach throw elseif include __FILE__ empty require_once do xor ' +
-      'return implements parent clone use __CLASS__ __LINE__ else break print eval new ' +
+      'return parent clone use __CLASS__ __LINE__ else break print eval new ' +
       'catch __METHOD__ case exception default die require __FUNCTION__ ' +
-      'enddeclare final try this switch continue endfor endif declare unset true false ' +
-      'namespace trait goto instanceof insteadof __DIR__ __NAMESPACE__ ' +
+      'enddeclare final try switch continue endfor endif declare unset true false ' +
+      'trait goto instanceof insteadof __DIR__ __NAMESPACE__ ' +
       'yield finally',
     contains: [
       hljs.C_LINE_COMMENT_MODE,
@@ -6406,70 +6599,75 @@ module.exports = function(hljs) {
       {
         className: 'comment',
         begin: '/\\*', end: '\\*/',
-        contains: [{
+        contains: [
+          {
             className: 'phpdoc',
             begin: '\\s@[A-Za-z]+'
-        }]
+          },
+          PREPROCESSOR
+        ]
       },
       {
           className: 'comment',
           begin: '__halt_compiler.+?;', endsWithParent: true,
-          keywords: '__halt_compiler', lexems: hljs.UNDERSCORE_IDENT_RE
+          keywords: '__halt_compiler', lexemes: hljs.UNDERSCORE_IDENT_RE
       },
       {
         className: 'string',
         begin: '<<<[\'"]?\\w+[\'"]?$', end: '^\\w+;',
         contains: [hljs.BACKSLASH_ESCAPE]
       },
-      {
-        className: 'preprocessor',
-        begin: '<\\?php',
-        relevance: 10
-      },
-      {
-        className: 'preprocessor',
-        begin: '\\?>'
-      },
+      PREPROCESSOR,
       VARIABLE,
       {
         className: 'function',
-        beginWithKeyword: true, end: '{',
-        keywords: 'function',
+        beginKeywords: 'function', end: /[;{]/,
         illegal: '\\$|\\[|%',
         contains: [
-          TITLE,
+          hljs.UNDERSCORE_TITLE_MODE,
           {
             className: 'params',
             begin: '\\(', end: '\\)',
             contains: [
               'self',
               VARIABLE,
-              hljs.C_BLOCK_COMMENT_MODE
-            ].concat(STRINGS).concat(NUMBERS)
+              hljs.C_BLOCK_COMMENT_MODE,
+              STRING,
+              NUMBER
+            ]
           }
         ]
       },
       {
         className: 'class',
-        beginWithKeyword: true, end: '{',
-        keywords: 'class',
-        illegal: '[:\\(\\$]',
+        beginKeywords: 'class interface', end: '{',
+        illegal: /[:\(\$"]/,
         contains: [
           {
-            beginWithKeyword: true, endsWithParent: true,
-            keywords: 'extends',
-            contains: [TITLE]
+            beginKeywords: 'extends implements',
+            relevance: 10
           },
-          TITLE
+          hljs.UNDERSCORE_TITLE_MODE
         ]
       },
       {
+        beginKeywords: 'namespace', end: ';',
+        illegal: /[\.']/,
+        contains: [hljs.UNDERSCORE_TITLE_MODE]
+      },
+      {
+        beginKeywords: 'use', end: ';',
+        contains: [hljs.UNDERSCORE_TITLE_MODE]
+      },
+      {
         begin: '=>' // No markup, just a relevance booster
-      }
-    ].concat(STRINGS).concat(NUMBERS)
+      },
+      STRING,
+      NUMBER
+    ]
   };
 };
-},{}],58:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
@@ -6503,73 +6701,68 @@ module.exports = function(hljs) {
       {
         className: 'function',
         begin: '\\(', end: '\\)$',
-        contains: [{
-          className: 'title',
-          begin: hljs.UNDERSCORE_IDENT_RE,
-          relevance: 0
-        }],
+        contains: [
+          hljs.UNDERSCORE_TITLE_MODE
+        ],
         relevance: 0
       }
     ]
   };
 };
-},{}],59:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 module.exports = function(hljs) {
   var PROMPT = {
     className: 'prompt',  begin: /^(>>>|\.\.\.) /
   }
-  var STRINGS = [
-    {
-      className: 'string',
-      begin: /(u|b)?r?'''/, end: /'''/,
-      contains: [PROMPT],
-      relevance: 10
-    },
-    {
-      className: 'string',
-      begin: /(u|b)?r?"""/, end: /"""/,
-      contains: [PROMPT],
-      relevance: 10
-    },
-    {
-      className: 'string',
-      begin: /(u|r|ur)'/, end: /'/,
-      contains: [hljs.BACKSLASH_ESCAPE],
-      relevance: 10
-    },
-    {
-      className: 'string',
-      begin: /(u|r|ur)"/, end: /"/,
-      contains: [hljs.BACKSLASH_ESCAPE],
-      relevance: 10
-    },
-    {
-      className: 'string',
-      begin: /(b|br)'/, end: /'/,
-      contains: [hljs.BACKSLASH_ESCAPE]
-    },
-    {
-      className: 'string',
-      begin: /(b|br)"/, end: /"/,
-      contains: [hljs.BACKSLASH_ESCAPE]
-    }
-  ].concat([
-    hljs.APOS_STRING_MODE,
-    hljs.QUOTE_STRING_MODE
-  ]);
-  var TITLE = {
-    className: 'title', begin: hljs.UNDERSCORE_IDENT_RE
+  var STRING = {
+    className: 'string',
+    contains: [hljs.BACKSLASH_ESCAPE],
+    variants: [
+      {
+        begin: /(u|b)?r?'''/, end: /'''/,
+        contains: [PROMPT],
+        relevance: 10
+      },
+      {
+        begin: /(u|b)?r?"""/, end: /"""/,
+        contains: [PROMPT],
+        relevance: 10
+      },
+      {
+        begin: /(u|r|ur)'/, end: /'/,
+        relevance: 10
+      },
+      {
+        begin: /(u|r|ur)"/, end: /"/,
+        relevance: 10
+      },
+      {
+        begin: /(b|br)'/, end: /'/,
+      },
+      {
+        begin: /(b|br)"/, end: /"/,
+      },
+      hljs.APOS_STRING_MODE,
+      hljs.QUOTE_STRING_MODE
+    ]
   };
+  var NUMBER = {
+    className: 'number', relevance: 0,
+    variants: [
+      {begin: hljs.BINARY_NUMBER_RE + '[lLjJ]?'},
+      {begin: '\\b(0o[0-7]+)[lLjJ]?'},
+      {begin: hljs.C_NUMBER_RE + '[lLjJ]?'}
+    ]
+  }
   var PARAMS = {
     className: 'params',
     begin: /\(/, end: /\)/,
-    contains: ['self', hljs.C_NUMBER_MODE, PROMPT].concat(STRINGS)
+    contains: ['self', PROMPT, NUMBER, STRING]
   };
   var FUNC_CLASS_PROTO = {
-    beginWithKeyword: true, end: /:/,
+    end: /:/,
     illegal: /[${=;\n]/,
-    contains: [TITLE, PARAMS],
-    relevance: 10
+    contains: [hljs.UNDERSCORE_TITLE_MODE, PARAMS]
   };
 
   return {
@@ -6582,12 +6775,13 @@ module.exports = function(hljs) {
         'Ellipsis NotImplemented'
     },
     illegal: /(<\/|->|\?)/,
-    contains: STRINGS.concat([
+    contains: [
       PROMPT,
+      NUMBER,
+      STRING,
       hljs.HASH_COMMENT_MODE,
-      hljs.inherit(FUNC_CLASS_PROTO, {className: 'function', keywords: 'def'}),
-      hljs.inherit(FUNC_CLASS_PROTO, {className: 'class', keywords: 'class'}),
-      hljs.C_NUMBER_MODE,
+      hljs.inherit(FUNC_CLASS_PROTO, {className: 'function', beginKeywords: 'def', relevance: 10}),
+      hljs.inherit(FUNC_CLASS_PROTO, {className: 'class', beginKeywords: 'class'}),
       {
         className: 'decorator',
         begin: /@/, end: /$/
@@ -6595,10 +6789,10 @@ module.exports = function(hljs) {
       {
         begin: /\b(print|exec)\(/ // don’t highlight keywords-turned-functions in Python 3
       }
-    ])
+    ]
   };
 };
-},{}],60:[function(require,module,exports){
+},{}],65:[function(require,module,exports){
 module.exports = function(hljs) {
   var IDENT_RE = '([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*';
 
@@ -6607,7 +6801,7 @@ module.exports = function(hljs) {
       hljs.HASH_COMMENT_MODE,
       {
         begin: IDENT_RE,
-        lexems: IDENT_RE,
+        lexemes: IDENT_RE,
         keywords: {
           keyword:
             'function if in break next repeat else for return switch while try tryCatch|10 ' +
@@ -6659,22 +6853,16 @@ module.exports = function(hljs) {
 
       {
         className: 'string',
-        begin: '"',
-        end: '"',
         contains: [hljs.BACKSLASH_ESCAPE],
-        relevance: 0
-      },
-      {
-        className: 'string',
-        begin: "'",
-        end: "'",
-        contains: [hljs.BACKSLASH_ESCAPE],
-        relevance: 0
+        variants: [
+          {begin: '"', end: '"'},
+          {begin: "'", end: "'"}
+        ]
       }
     ]
   };
 };
-},{}],61:[function(require,module,exports){
+},{}],66:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords:
@@ -6701,7 +6889,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],62:[function(require,module,exports){
+},{}],67:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -6729,151 +6917,99 @@ module.exports = function(hljs) {
       },
       {
         className: 'shader',
-        beginWithKeyword: true, end: '\\(',
-        keywords: 'surface displacement light volume imager'
+        beginKeywords: 'surface displacement light volume imager', end: '\\('
       },
       {
         className: 'shading',
-        beginWithKeyword: true, end: '\\(',
-        keywords: 'illuminate illuminance gather'
+        beginKeywords: 'illuminate illuminance gather', end: '\\('
       }
     ]
   };
 };
-},{}],63:[function(require,module,exports){
+},{}],68:[function(require,module,exports){
 module.exports = function(hljs) {
-  var RUBY_IDENT_RE = '[a-zA-Z_][a-zA-Z0-9_]*(\\!|\\?)?';
   var RUBY_METHOD_RE = '[a-zA-Z_]\\w*[!?=]?|[-+~]\\@|<<|>>|=~|===?|<=>|[<>]=?|\\*\\*|[-/+%^&*~`|]|\\[\\]=?';
-  var RUBY_KEYWORDS = {
-    keyword:
-      'and false then defined module in return redo if BEGIN retry end for true self when ' +
-      'next until do begin unless END rescue nil else break undef not super class case ' +
-      'require yield alias while ensure elsif or include'
-  };
+  var RUBY_KEYWORDS =
+    'and false then defined module in return redo if BEGIN retry end for true self when ' +
+    'next until do begin unless END rescue nil else break undef not super class case ' +
+    'require yield alias while ensure elsif or include attr_reader attr_writer attr_accessor';
   var YARDOCTAG = {
     className: 'yardoctag',
     begin: '@[A-Za-z]+'
   };
-  var COMMENTS = [
-    {
-      className: 'comment',
-      begin: '#', end: '$',
-      contains: [YARDOCTAG]
-    },
-    {
-      className: 'comment',
-      begin: '^\\=begin', end: '^\\=end',
-      contains: [YARDOCTAG],
-      relevance: 10
-    },
-    {
-      className: 'comment',
-      begin: '^__END__', end: '\\n$'
-    }
-  ];
+  var COMMENT = {
+    className: 'comment',
+    variants: [
+      {
+        begin: '#', end: '$',
+        contains: [YARDOCTAG]
+      },
+      {
+        begin: '^\\=begin', end: '^\\=end',
+        contains: [YARDOCTAG],
+        relevance: 10
+      },
+      {
+        begin: '^__END__', end: '\\n$'
+      }
+    ]
+  };
   var SUBST = {
     className: 'subst',
     begin: '#\\{', end: '}',
-    lexems: RUBY_IDENT_RE,
     keywords: RUBY_KEYWORDS
   };
-  var STR_CONTAINS = [hljs.BACKSLASH_ESCAPE, SUBST];
-  var STRINGS = [
-    {
-      className: 'string',
-      begin: '\'', end: '\'',
-      contains: STR_CONTAINS,
-      relevance: 0
-    },
-    {
-      className: 'string',
-      begin: '"', end: '"',
-      contains: STR_CONTAINS,
-      relevance: 0
-    },
-    {
-      className: 'string',
-      begin: '%[qw]?\\(', end: '\\)',
-      contains: STR_CONTAINS
-    },
-    {
-      className: 'string',
-      begin: '%[qw]?\\[', end: '\\]',
-      contains: STR_CONTAINS
-    },
-    {
-      className: 'string',
-      begin: '%[qw]?{', end: '}',
-      contains: STR_CONTAINS
-    },
-    {
-      className: 'string',
-      begin: '%[qw]?<', end: '>',
-      contains: STR_CONTAINS,
-      relevance: 10
-    },
-    {
-      className: 'string',
-      begin: '%[qw]?/', end: '/',
-      contains: STR_CONTAINS,
-      relevance: 10
-    },
-    {
-      className: 'string',
-      begin: '%[qw]?%', end: '%',
-      contains: STR_CONTAINS,
-      relevance: 10
-    },
-    {
-      className: 'string',
-      begin: '%[qw]?-', end: '-',
-      contains: STR_CONTAINS,
-      relevance: 10
-    },
-    {
-      className: 'string',
-      begin: '%[qw]?\\|', end: '\\|',
-      contains: STR_CONTAINS,
-      relevance: 10
-    },
-    {
-      className: 'string',
-      // \B in the beginning suppresses recognition of ?-sequences where ?
-      // is the last character of a preceding identifier, as in: `func?4`
-      begin: /\B\?(\\\d{1,3}|\\x[A-Fa-f0-9]{1,2}|\\u[A-Fa-f0-9]{4}|\\?\S)\b/
-    }
-  ];
-  var FUNCTION = {
-    className: 'function',
-    beginWithKeyword: true, end: ' |$|;',
-    keywords: 'def',
-    contains: [
+  var STRING = {
+    className: 'string',
+    contains: [hljs.BACKSLASH_ESCAPE, SUBST],
+    variants: [
+      {begin: /'/, end: /'/},
+      {begin: /"/, end: /"/},
+      {begin: '%[qw]?\\(', end: '\\)'},
+      {begin: '%[qw]?\\[', end: '\\]'},
+      {begin: '%[qw]?{', end: '}'},
       {
-        className: 'title',
-        begin: RUBY_METHOD_RE,
-        lexems: RUBY_IDENT_RE,
-        keywords: RUBY_KEYWORDS
+        begin: '%[qw]?<', end: '>',
+        relevance: 10
       },
       {
-        className: 'params',
-        begin: '\\(', end: '\\)',
-        lexems: RUBY_IDENT_RE,
-        keywords: RUBY_KEYWORDS
+        begin: '%[qw]?/', end: '/',
+        relevance: 10
+      },
+      {
+        begin: '%[qw]?%', end: '%',
+        relevance: 10
+      },
+      {
+        begin: '%[qw]?-', end: '-',
+        relevance: 10
+      },
+      {
+        begin: '%[qw]?\\|', end: '\\|',
+        relevance: 10
+      },
+      {
+        // \B in the beginning suppresses recognition of ?-sequences where ?
+        // is the last character of a preceding identifier, as in: `func?4`
+        begin: /\B\?(\\\d{1,3}|\\x[A-Fa-f0-9]{1,2}|\\u[A-Fa-f0-9]{4}|\\?\S)\b/
       }
-    ].concat(COMMENTS)
+    ]
+  };
+  var PARAMS = {
+    className: 'params',
+    begin: '\\(', end: '\\)',
+    keywords: RUBY_KEYWORDS
   };
 
-  var RUBY_DEFAULT_CONTAINS = COMMENTS.concat(STRINGS.concat([
+  var RUBY_DEFAULT_CONTAINS = [
+    STRING,
+    COMMENT,
     {
       className: 'class',
-      beginWithKeyword: true, end: '$|;',
-      keywords: 'class module',
+      beginKeywords: 'class module', end: '$|;',
+      illegal: /=/,
       contains: [
-        {
-          className: 'title',
-          begin: '[A-Za-z_]\\w*(::\\w+)*(\\?|\\!)?',
-          relevance: 0
-        },
+        hljs.inherit(hljs.TITLE_MODE, {begin: '[A-Za-z_]\\w*(::\\w+)*(\\?|\\!)?'}),
         {
           className: 'inheritance',
           begin: '<\\s*',
@@ -6881,10 +7017,20 @@ module.exports = function(hljs) {
             className: 'parent',
             begin: '(' + hljs.IDENT_RE + '::)?' + hljs.IDENT_RE
           }]
-        }
-      ].concat(COMMENTS)
+        },
+        COMMENT
+      ]
     },
-    FUNCTION,
+    {
+      className: 'function',
+      beginKeywords: 'def', end: ' |$|;',
+      relevance: 0,
+      contains: [
+        hljs.inherit(hljs.TITLE_MODE, {begin: RUBY_METHOD_RE}),
+        PARAMS,
+        COMMENT
+      ]
+    },
     {
       className: 'constant',
       begin: '(::)?(\\b[A-Z]\\w*(::)?)+',
@@ -6893,12 +7039,12 @@ module.exports = function(hljs) {
     {
       className: 'symbol',
       begin: ':',
-      contains: STRINGS.concat([{begin: RUBY_METHOD_RE}]),
+      contains: [STRING, {begin: RUBY_METHOD_RE}],
       relevance: 0
     },
     {
       className: 'symbol',
-      begin: RUBY_IDENT_RE + ':',
+      begin: hljs.UNDERSCORE_IDENT_RE + '(\\!|\\?)?:',
       relevance: 0
     },
     {
@@ -6912,93 +7058,75 @@ module.exports = function(hljs) {
     },
     { // regexp container
       begin: '(' + hljs.RE_STARTERS_RE + ')\\s*',
-      contains: COMMENTS.concat([
+      contains: [
+        COMMENT,
         {
           className: 'regexp',
-          begin: '/', end: '/[a-z]*',
-          illegal: '\\n',
-          contains: [hljs.BACKSLASH_ESCAPE, SUBST]
-        },
-        {
-          className: 'regexp',
-          begin: '%r{', end: '}[a-z]*',
-          illegal: '\\n',
-          contains: [hljs.BACKSLASH_ESCAPE, SUBST]
-        },
-        {
-          className: 'regexp',
-          begin: '%r\\(', end: '\\)[a-z]*',
-          illegal: '\\n',
-          contains: [hljs.BACKSLASH_ESCAPE, SUBST]
-        },
-        {
-          className: 'regexp',
-          begin: '%r!', end: '![a-z]*',
-          illegal: '\\n',
-          contains: [hljs.BACKSLASH_ESCAPE, SUBST]
-        },
-        {
-          className: 'regexp',
-          begin: '%r\\[', end: '\\][a-z]*',
-          illegal: '\\n',
-          contains: [hljs.BACKSLASH_ESCAPE, SUBST]
+          contains: [hljs.BACKSLASH_ESCAPE, SUBST],
+          illegal: /\n/,
+          variants: [
+            {begin: '/', end: '/[a-z]*'},
+            {begin: '%r{', end: '}[a-z]*'},
+            {begin: '%r\\(', end: '\\)[a-z]*'},
+            {begin: '%r!', end: '![a-z]*'},
+            {begin: '%r\\[', end: '\\][a-z]*'}
+          ]
         }
-      ]),
+      ],
       relevance: 0
     }
-  ]));
+  ];
   SUBST.contains = RUBY_DEFAULT_CONTAINS;
-  FUNCTION.contains[1].contains = RUBY_DEFAULT_CONTAINS;
+  PARAMS.contains = RUBY_DEFAULT_CONTAINS;
 
   return {
-    lexems: RUBY_IDENT_RE,
     keywords: RUBY_KEYWORDS,
     contains: RUBY_DEFAULT_CONTAINS
   };
 };
-},{}],64:[function(require,module,exports){
+},{}],69:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
        keyword: 'BILL_PERIOD BILL_START BILL_STOP RS_EFFECTIVE_START RS_EFFECTIVE_STOP RS_JURIS_CODE RS_OPCO_CODE ' +
-         'INTDADDATTRIBUTE|5 INTDADDVMSG|5 INTDBLOCKOP|5 INTDBLOCKOPNA|5 INTDCLOSE|5 INTDCOUNT|5 ' + 
-         'INTDCOUNTSTATUSCODE|5 INTDCREATEMASK|5 INTDCREATEDAYMASK|5 INTDCREATEFACTORMASK|5 ' + 
-         'INTDCREATEHANDLE|5 INTDCREATEMASK|5 INTDCREATEOVERRIDEDAYMASK|5 INTDCREATEOVERRIDEMASK|5 ' + 
-         'INTDCREATESTATUSCODEMASK|5 INTDCREATETOUPERIOD|5 INTDDELETE|5 INTDDIPTEST|5 INTDEXPORT|5 ' + 
-         'INTDGETERRORCODE|5 INTDGETERRORMESSAGE|5 INTDISEQUAL|5 INTDJOIN|5 INTDLOAD|5 INTDLOADACTUALCUT|5 ' + 
-         'INTDLOADDATES|5 INTDLOADHIST|5 INTDLOADLIST|5 INTDLOADLISTDATES|5 INTDLOADLISTENERGY|5 ' + 
-         'INTDLOADLISTHIST|5 INTDLOADRELATEDCHANNEL|5 INTDLOADSP|5 INTDLOADSTAGING|5 INTDLOADUOM|5 ' + 
-         'INTDLOADUOMDATES|5 INTDLOADUOMHIST|5 INTDLOADVERSION|5 INTDOPEN|5 INTDREADFIRST|5 INTDREADNEXT|5 ' + 
-         'INTDRECCOUNT|5 INTDRELEASE|5 INTDREPLACE|5 INTDROLLAVG|5 INTDROLLPEAK|5 INTDSCALAROP|5 INTDSCALE|5 ' + 
-         'INTDSETATTRIBUTE|5 INTDSETDSTPARTICIPANT|5 INTDSETSTRING|5 INTDSETVALUE|5 INTDSETVALUESTATUS|5 ' + 
-         'INTDSHIFTSTARTTIME|5 INTDSMOOTH|5 INTDSORT|5 INTDSPIKETEST|5 INTDSUBSET|5 INTDTOU|5 ' + 
-         'INTDTOURELEASE|5 INTDTOUVALUE|5 INTDUPDATESTATS|5 INTDVALUE|5 STDEV INTDDELETEEX|5 ' + 
-         'INTDLOADEXACTUAL|5 INTDLOADEXCUT|5 INTDLOADEXDATES|5 INTDLOADEX|5 INTDLOADEXRELATEDCHANNEL|5 ' + 
-         'INTDSAVEEX|5 MVLOAD|5 MVLOADACCT|5 MVLOADACCTDATES|5 MVLOADACCTHIST|5 MVLOADDATES|5 MVLOADHIST|5 ' + 
+         'INTDADDATTRIBUTE|5 INTDADDVMSG|5 INTDBLOCKOP|5 INTDBLOCKOPNA|5 INTDCLOSE|5 INTDCOUNT|5 ' +
+         'INTDCOUNTSTATUSCODE|5 INTDCREATEMASK|5 INTDCREATEDAYMASK|5 INTDCREATEFACTORMASK|5 ' +
+         'INTDCREATEHANDLE|5 INTDCREATEOVERRIDEDAYMASK|5 INTDCREATEOVERRIDEMASK|5 ' +
+         'INTDCREATESTATUSCODEMASK|5 INTDCREATETOUPERIOD|5 INTDDELETE|5 INTDDIPTEST|5 INTDEXPORT|5 ' +
+         'INTDGETERRORCODE|5 INTDGETERRORMESSAGE|5 INTDISEQUAL|5 INTDJOIN|5 INTDLOAD|5 INTDLOADACTUALCUT|5 ' +
+         'INTDLOADDATES|5 INTDLOADHIST|5 INTDLOADLIST|5 INTDLOADLISTDATES|5 INTDLOADLISTENERGY|5 ' +
+         'INTDLOADLISTHIST|5 INTDLOADRELATEDCHANNEL|5 INTDLOADSP|5 INTDLOADSTAGING|5 INTDLOADUOM|5 ' +
+         'INTDLOADUOMDATES|5 INTDLOADUOMHIST|5 INTDLOADVERSION|5 INTDOPEN|5 INTDREADFIRST|5 INTDREADNEXT|5 ' +
+         'INTDRECCOUNT|5 INTDRELEASE|5 INTDREPLACE|5 INTDROLLAVG|5 INTDROLLPEAK|5 INTDSCALAROP|5 INTDSCALE|5 ' +
+         'INTDSETATTRIBUTE|5 INTDSETDSTPARTICIPANT|5 INTDSETSTRING|5 INTDSETVALUE|5 INTDSETVALUESTATUS|5 ' +
+         'INTDSHIFTSTARTTIME|5 INTDSMOOTH|5 INTDSORT|5 INTDSPIKETEST|5 INTDSUBSET|5 INTDTOU|5 ' +
+         'INTDTOURELEASE|5 INTDTOUVALUE|5 INTDUPDATESTATS|5 INTDVALUE|5 STDEV INTDDELETEEX|5 ' +
+         'INTDLOADEXACTUAL|5 INTDLOADEXCUT|5 INTDLOADEXDATES|5 INTDLOADEX|5 INTDLOADEXRELATEDCHANNEL|5 ' +
+         'INTDSAVEEX|5 MVLOAD|5 MVLOADACCT|5 MVLOADACCTDATES|5 MVLOADACCTHIST|5 MVLOADDATES|5 MVLOADHIST|5 ' +
          'MVLOADLIST|5 MVLOADLISTDATES|5 MVLOADLISTHIST|5 IF FOR NEXT DONE SELECT END CALL ABORT CLEAR CHANNEL FACTOR LIST NUMBER ' +
          'OVERRIDE SET WEEK DISTRIBUTIONNODE ELSE WHEN THEN OTHERWISE IENUM CSV INCLUDE LEAVE RIDER SAVE DELETE ' +
-         'NOVALUE SECTION WARN DELETE SAVE SAVE_UPDATE CLEAR DETERMINANT LABEL REPORT REVENUE ABORT CALL DONE LEAVE EACH ' + 
-         'IN LIST NOVALUE FROM TOTAL CHARGE BLOCK AND OR CSV_FILE BILL_PERIOD RATE_CODE AUXILIARY_DEMAND ' + 
-         'UIDACCOUNT RS BILL_PERIOD_SELECT HOURS_PER_MONTH INTD_ERROR_STOP SEASON_SCHEDULE_NAME ' + 
-         'ACCOUNTFACTOR ARRAYUPPERBOUND CALLSTOREDPROC GETADOCONNECTION GETCONNECT GETDATASOURCE ' + 
-         'GETQUALIFIER GETUSERID HASVALUE LISTCOUNT LISTOP LISTUPDATE LISTVALUE PRORATEFACTOR RSPRORATE ' + 
-         'SETBINPATH SETDBMONITOR WQ_OPEN BILLINGHOURS DATE DATEFROMFLOAT DATETIMEFROMSTRING ' + 
-         'DATETIMETOSTRING DATETOFLOAT DAY DAYDIFF DAYNAME DBDATETIME HOUR MINUTE MONTH MONTHDIFF ' + 
-         'MONTHHOURS MONTHNAME ROUNDDATE SAMEWEEKDAYLASTYEAR SECOND WEEKDAY WEEKDIFF YEAR YEARDAY ' + 
-         'YEARSTR COMPSUM HISTCOUNT HISTMAX HISTMIN HISTMINNZ HISTVALUE MAXNRANGE MAXRANGE MINRANGE ' + 
-         'COMPIKVA COMPKVA COMPKVARFROMKQKW COMPLF IDATTR FLAG LF2KW LF2KWH MAXKW POWERFACTOR ' + 
-         'READING2USAGE AVGSEASON MAXSEASON MONTHLYMERGE SEASONVALUE SUMSEASON ACCTREADDATES ' + 
-         'ACCTTABLELOAD CONFIGADD CONFIGGET CREATEOBJECT CREATEREPORT EMAILCLIENT EXPBLKMDMUSAGE ' + 
-         'EXPMDMUSAGE EXPORT_USAGE FACTORINEFFECT GETUSERSPECIFIEDSTOP INEFFECT ISHOLIDAY RUNRATE ' + 
-         'SAVE_PROFILE SETREPORTTITLE USEREXIT WATFORRUNRATE TO TABLE ACOS ASIN ATAN ATAN2 BITAND CEIL ' + 
-         'COS COSECANT COSH COTANGENT DIVQUOT DIVREM EXP FABS FLOOR FMOD FREPM FREXPN LOG LOG10 MAX MAXN ' + 
-         'MIN MINNZ MODF POW ROUND ROUND2VALUE ROUNDINT SECANT SIN SINH SQROOT TAN TANH FLOAT2STRING ' + 
-         'FLOAT2STRINGNC INSTR LEFT LEN LTRIM MID RIGHT RTRIM STRING STRINGNC TOLOWER TOUPPER TRIM ABORT WARN ' + 
-         'NUMDAYS RATE_CODE READ_DATE STAGING',
-       built_in: 'IDENTIFIER OPTIONS XML_ELEMENT XML_OP XML_ELEMENT_OF DOMDOCCREATE DOMDOCLOADFILE DOMDOCLOADXML ' + 
-         'DOMDOCSAVEFILE DOMDOCGETROOT DOMDOCADDPI DOMNODEGETNAME DOMNODEGETTYPE DOMNODEGETVALUE DOMNODEGETCHILDCT ' + 
-         'DOMNODEGETFIRSTCHILD DOMNODEGETSIBLING DOMNODECREATECHILDELEMENT DOMNODESETATTRIBUTE ' + 
-         'DOMNODEGETCHILDELEMENTCT DOMNODEGETFIRSTCHILDELEMENT DOMNODEGETSIBLINGELEMENT DOMNODEGETATTRIBUTECT ' + 
+         'NOVALUE SECTION WARN SAVE_UPDATE DETERMINANT LABEL REPORT REVENUE EACH ' +
+         'IN FROM TOTAL CHARGE BLOCK AND OR CSV_FILE RATE_CODE AUXILIARY_DEMAND ' +
+         'UIDACCOUNT RS BILL_PERIOD_SELECT HOURS_PER_MONTH INTD_ERROR_STOP SEASON_SCHEDULE_NAME ' +
+         'ACCOUNTFACTOR ARRAYUPPERBOUND CALLSTOREDPROC GETADOCONNECTION GETCONNECT GETDATASOURCE ' +
+         'GETQUALIFIER GETUSERID HASVALUE LISTCOUNT LISTOP LISTUPDATE LISTVALUE PRORATEFACTOR RSPRORATE ' +
+         'SETBINPATH SETDBMONITOR WQ_OPEN BILLINGHOURS DATE DATEFROMFLOAT DATETIMEFROMSTRING ' +
+         'DATETIMETOSTRING DATETOFLOAT DAY DAYDIFF DAYNAME DBDATETIME HOUR MINUTE MONTH MONTHDIFF ' +
+         'MONTHHOURS MONTHNAME ROUNDDATE SAMEWEEKDAYLASTYEAR SECOND WEEKDAY WEEKDIFF YEAR YEARDAY ' +
+         'YEARSTR COMPSUM HISTCOUNT HISTMAX HISTMIN HISTMINNZ HISTVALUE MAXNRANGE MAXRANGE MINRANGE ' +
+         'COMPIKVA COMPKVA COMPKVARFROMKQKW COMPLF IDATTR FLAG LF2KW LF2KWH MAXKW POWERFACTOR ' +
+         'READING2USAGE AVGSEASON MAXSEASON MONTHLYMERGE SEASONVALUE SUMSEASON ACCTREADDATES ' +
+         'ACCTTABLELOAD CONFIGADD CONFIGGET CREATEOBJECT CREATEREPORT EMAILCLIENT EXPBLKMDMUSAGE ' +
+         'EXPMDMUSAGE EXPORT_USAGE FACTORINEFFECT GETUSERSPECIFIEDSTOP INEFFECT ISHOLIDAY RUNRATE ' +
+         'SAVE_PROFILE SETREPORTTITLE USEREXIT WATFORRUNRATE TO TABLE ACOS ASIN ATAN ATAN2 BITAND CEIL ' +
+         'COS COSECANT COSH COTANGENT DIVQUOT DIVREM EXP FABS FLOOR FMOD FREPM FREXPN LOG LOG10 MAX MAXN ' +
+         'MIN MINNZ MODF POW ROUND ROUND2VALUE ROUNDINT SECANT SIN SINH SQROOT TAN TANH FLOAT2STRING ' +
+         'FLOAT2STRINGNC INSTR LEFT LEN LTRIM MID RIGHT RTRIM STRING STRINGNC TOLOWER TOUPPER TRIM ' +
+         'NUMDAYS READ_DATE STAGING',
+       built_in: 'IDENTIFIER OPTIONS XML_ELEMENT XML_OP XML_ELEMENT_OF DOMDOCCREATE DOMDOCLOADFILE DOMDOCLOADXML ' +
+         'DOMDOCSAVEFILE DOMDOCGETROOT DOMDOCADDPI DOMNODEGETNAME DOMNODEGETTYPE DOMNODEGETVALUE DOMNODEGETCHILDCT ' +
+         'DOMNODEGETFIRSTCHILD DOMNODEGETSIBLING DOMNODECREATECHILDELEMENT DOMNODESETATTRIBUTE ' +
+         'DOMNODEGETCHILDELEMENTCT DOMNODEGETFIRSTCHILDELEMENT DOMNODEGETSIBLINGELEMENT DOMNODEGETATTRIBUTECT ' +
          'DOMNODEGETATTRIBUTEI DOMNODEGETATTRIBUTEBYNAME DOMNODEGETBYNAME'
     },
     contains: [
@@ -7013,12 +7141,8 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],65:[function(require,module,exports){
+},{}],70:[function(require,module,exports){
 module.exports = function(hljs) {
-  var TITLE = {
-    className: 'title',
-    begin: hljs.UNDERSCORE_IDENT_RE
-  };
   var NUMBER = {
     className: 'number',
     begin: '\\b(0[xb][A-Za-z0-9_]+|[0-9_]+(\\.[0-9_]+)?([uif](8|16|32|64)?)?)',
@@ -7041,30 +7165,27 @@ module.exports = function(hljs) {
       NUMBER,
       {
         className: 'function',
-        beginWithKeyword: true, end: '(\\(|<)',
-        keywords: 'fn',
-        contains: [TITLE]
+        beginKeywords: 'fn', end: '(\\(|<)',
+        contains: [hljs.UNDERSCORE_TITLE_MODE]
       },
       {
         className: 'preprocessor',
         begin: '#\\[', end: '\\]'
       },
       {
-        beginWithKeyword: true, end: '(=|<)',
-        keywords: 'type',
-        contains: [TITLE],
+        beginKeywords: 'type', end: '(=|<)',
+        contains: [hljs.UNDERSCORE_TITLE_MODE],
         illegal: '\\S'
       },
       {
-        beginWithKeyword: true, end: '({|<)',
-        keywords: 'trait enum',
-        contains: [TITLE],
+        beginKeywords: 'trait enum', end: '({|<)',
+        contains: [hljs.UNDERSCORE_TITLE_MODE],
         illegal: '\\S'
       }
     ]
   };
 };
-},{}],66:[function(require,module,exports){
+},{}],71:[function(require,module,exports){
 module.exports = function(hljs) {
   var ANNOTATION = {
     className: 'annotation', begin: '@[A-Za-z]+'
@@ -7093,19 +7214,15 @@ module.exports = function(hljs) {
       STRING, hljs.APOS_STRING_MODE, hljs.QUOTE_STRING_MODE,
       {
         className: 'class',
-        begin: '((case )?class |object |trait )', end: '({|$)', // beginWithKeyword won't work because a single "case" shouldn't start this mode
+        begin: '((case )?class |object |trait )', end: '({|$)', // beginKeywords won't work because a single "case" shouldn't start this mode
         illegal: ':',
         keywords: 'case class trait object',
         contains: [
           {
-            beginWithKeyword: true,
-            keywords: 'extends with',
+            beginKeywords: 'extends with',
             relevance: 10
           },
-          {
-            className: 'title',
-            begin: hljs.UNDERSCORE_IDENT_RE
-          },
+          hljs.UNDERSCORE_TITLE_MODE,
           {
             className: 'params',
             begin: '\\(', end: '\\)',
@@ -7121,7 +7238,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],67:[function(require,module,exports){
+},{}],72:[function(require,module,exports){
 module.exports = function(hljs) {
 
   var COMMON_CONTAINS = [
@@ -7129,8 +7246,7 @@ module.exports = function(hljs) {
     {
       className: 'string',
       begin: '\'|\"', end: '\'|\"',
-      contains: [hljs.BACKSLASH_ESCAPE, {begin: '\'\''}],
-      relevance: 0
+      contains: [hljs.BACKSLASH_ESCAPE, {begin: '\'\''}]
     }
   ];
 
@@ -7151,26 +7267,25 @@ module.exports = function(hljs) {
     contains: [
       {
         className: 'function',
-        beginWithKeyword: true, end: '$',
+        beginKeywords: 'function endfunction', end: '$',
         keywords: 'function endfunction|10',
         contains: [
+          hljs.UNDERSCORE_TITLE_MODE,
           {
-              className: 'title',
-              begin: hljs.UNDERSCORE_IDENT_RE
-          },
-          {
-              className: 'params',
-              begin: '\\(', end: '\\)'
+            className: 'params',
+            begin: '\\(', end: '\\)'
           },
         ],
       },
       {
         className: 'transposed_variable',
-        begin: '[a-zA-Z_][a-zA-Z_0-9]*(\'+[\\.\']*|[\\.\']+)', end: ''
+        begin: '[a-zA-Z_][a-zA-Z_0-9]*(\'+[\\.\']*|[\\.\']+)', end: '',
+        relevance: 0
       },
       {
         className: 'matrix',
         begin: '\\[', end: '\\]\'*[\\.\']*',
+        relevance: 0,
         contains: COMMON_CONTAINS
       },
       {
@@ -7180,7 +7295,7 @@ module.exports = function(hljs) {
     ].concat(COMMON_CONTAINS)
   };
 };
-},{}],68:[function(require,module,exports){
+},{}],73:[function(require,module,exports){
 module.exports = function(hljs) {
   var IDENT_RE = '[a-zA-Z-][a-zA-Z0-9_-]*';
   var FUNCTION = {
@@ -7291,7 +7406,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],69:[function(require,module,exports){
+},{}],74:[function(require,module,exports){
 module.exports = function(hljs) {
   var VAR_IDENT_RE = '[a-z][a-zA-Z0-9_]*';
   var CHAR = {
@@ -7307,8 +7422,7 @@ module.exports = function(hljs) {
     contains: [
       {
         className: 'comment',
-        begin: '"', end: '"',
-        relevance: 0
+        begin: '"', end: '"'
       },
       hljs.APOS_STRING_MODE,
       {
@@ -7318,7 +7432,8 @@ module.exports = function(hljs) {
       },
       {
         className: 'method',
-        begin: VAR_IDENT_RE + ':'
+        begin: VAR_IDENT_RE + ':',
+        relevance: 0
       },
       hljs.C_NUMBER_MODE,
       SYMBOL,
@@ -7328,7 +7443,10 @@ module.exports = function(hljs) {
         // This looks more complicated than needed to avoid combinatorial
         // explosion under V8. It effectively means `| var1 var2 ... |` with
         // whitespace adjacent to `|` being optional.
-        begin: '\\|\\s*' + VAR_IDENT_RE + '(\\s+' + VAR_IDENT_RE + ')*\\s*\\|'
+        begin: '\\|[ ]*' + VAR_IDENT_RE + '([ ]+' + VAR_IDENT_RE + ')*[ ]*\\|',
+        returnBegin: true, end: /\|/,
+        illegal: /\S/,
+        contains: [{begin: '(\\|[ ]*)?' + VAR_IDENT_RE}]
       },
       {
         className: 'array',
@@ -7343,14 +7461,15 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],70:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
+    illegal: /[<>]/,
     contains: [
       {
         className: 'operator',
-        begin: '(begin|end|start|commit|rollback|savepoint|lock|alter|create|drop|rename|call|delete|do|handler|insert|load|replace|select|truncate|update|set|show|pragma|grant)\\b(?!:)', // negative look-ahead here is specifically to prevent stomping on SmallTalk
+        begin: '\\b(begin|end|start|commit|rollback|savepoint|lock|alter|create|drop|rename|call|delete|do|handler|insert|load|replace|select|truncate|update|set|show|pragma|grant|merge)\\b(?!:)', // negative look-ahead here is specifically to prevent stomping on SmallTalk
         end: ';', endsWithParent: true,
         keywords: {
           keyword: 'all partial global month current_timestamp using go revoke smallint ' +
@@ -7372,21 +7491,20 @@ module.exports = function(hljs) {
             'privileges when cross check write current_date pad begin temporary exec time ' +
             'update catalog user sql date on identity timezone_hour natural whenever interval ' +
             'work order cascade diagnostics nchar having left call do handler load replace ' +
-            'truncate start lock show pragma exists number trigger if before after each row',
+            'truncate start lock show pragma exists number trigger if before after each row ' +
+            'merge matched database',
           aggregate: 'count sum min max avg'
         },
         contains: [
           {
             className: 'string',
             begin: '\'', end: '\'',
-            contains: [hljs.BACKSLASH_ESCAPE, {begin: '\'\''}],
-            relevance: 0
+            contains: [hljs.BACKSLASH_ESCAPE, {begin: '\'\''}]
           },
           {
             className: 'string',
             begin: '"', end: '"',
-            contains: [hljs.BACKSLASH_ESCAPE, {begin: '""'}],
-            relevance: 0
+            contains: [hljs.BACKSLASH_ESCAPE, {begin: '""'}]
           },
           {
             className: 'string',
@@ -7404,7 +7522,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],71:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
 module.exports = function(hljs) {
   var COMMAND1 = {
     className: 'command',
@@ -7457,7 +7575,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],72:[function(require,module,exports){
+},{}],77:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -7483,14 +7601,10 @@ module.exports = function(hljs) {
     contains: [
       {
         className: 'class',
-        beginWithKeyword: true, end: '{',
-        keywords: 'class interface delegate namespace',
+        beginKeywords: 'class interface delegate namespace', end: '{',
         illegal: '[^,:\\n\\s\\.]',
         contains: [
-          {
-            className: 'title',
-            begin: hljs.UNDERSCORE_IDENT_RE
-          }
+          hljs.UNDERSCORE_TITLE_MODE
         ]
       },
       hljs.C_LINE_COMMENT_MODE,
@@ -7516,7 +7630,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],73:[function(require,module,exports){
+},{}],78:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -7566,7 +7680,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],74:[function(require,module,exports){
+},{}],79:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -7595,13 +7709,14 @@ module.exports = function(hljs) {
       hljs.inherit(hljs.QUOTE_STRING_MODE, {contains: [{begin: '""'}]}),
       {
         className: 'comment',
-        begin: '\'', end: '$'
+        begin: /'/, end: /$/,
+        relevance: 0
       },
       hljs.C_NUMBER_MODE
     ]
   };
 };
-},{}],75:[function(require,module,exports){
+},{}],80:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -7644,49 +7759,44 @@ module.exports = function(hljs) {
     ]
   }; // return
 };
-},{}],76:[function(require,module,exports){
+},{}],81:[function(require,module,exports){
 module.exports = function(hljs) {
   var XML_IDENT_RE = '[A-Za-z0-9\\._:-]+';
+  var PHP = {
+    begin: /<\?(php)?(?!\w)/, end: /\?>/,
+    subLanguage: 'php', subLanguageMode: 'continuous'
+  };
   var TAG_INTERNALS = {
     endsWithParent: true,
+    illegal: /</,
     relevance: 0,
     contains: [
+      PHP,
       {
         className: 'attribute',
         begin: XML_IDENT_RE,
         relevance: 0
       },
       {
-        begin: '="', returnBegin: true, end: '"',
-        contains: [{
-            className: 'value',
-            begin: '"', endsWithParent: true
-        }]
-      },
-      {
-        begin: '=\'', returnBegin: true, end: '\'',
-        contains: [{
-          className: 'value',
-          begin: '\'', endsWithParent: true
-        }]
-      },
-      {
         begin: '=',
-        contains: [{
-          className: 'value',
-          begin: '[^\\s/>]+'
-        }]
+        relevance: 0,
+        contains: [
+          {
+            className: 'value',
+            variants: [
+              {begin: /"/, end: /"/},
+              {begin: /'/, end: /'/},
+              {begin: /[^\s\/>]+/}
+            ]
+          }
+        ]
       }
     ]
   };
   return {
+    aliases: ['html'],
     case_insensitive: true,
     contains: [
-      {
-        className: 'pi',
-        begin: '<\\?', end: '\\?>',
-        relevance: 10
-      },
       {
         className: 'doctype',
         begin: '<!DOCTYPE', end: '>',
@@ -7708,8 +7818,8 @@ module.exports = function(hljs) {
         /*
         The lookahead pattern (?=...) ensures that 'begin' only matches
         '<style' as a single word, followed by a whitespace or an
-        ending braket. The '$' is needed for the lexem to be recognized
-        by hljs.subMode() that tests lexems outside the stream.
+        ending braket. The '$' is needed for the lexeme to be recognized
+        by hljs.subMode() that tests lexemes outside the stream.
         */
         begin: '<style(?=\\s|>|$)', end: '>',
         keywords: {title: 'style'},
@@ -7734,13 +7844,18 @@ module.exports = function(hljs) {
         begin: '<%', end: '%>',
         subLanguage: 'vbscript'
       },
+      PHP,
+      {
+        className: 'pi',
+        begin: /<\?\w+/, end: /\?>/,
+        relevance: 10
+      },
       {
         className: 'tag',
         begin: '</?', end: '/?>',
-        relevance: 0,
         contains: [
           {
-            className: 'title', begin: '[^ /><]+'
+            className: 'title', begin: '[^ /><]+', relevance: 0
           },
           TAG_INTERNALS
         ]
@@ -7748,7 +7863,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],77:[function(require,module,exports){
+},{}],82:[function(require,module,exports){
 //     Underscore.js 1.5.2
 //     http://underscorejs.org
 //     (c) 2009-2013 Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
@@ -9027,4 +9142,3 @@ module.exports = function(hljs) {
 }).call(this);
 
 },{}]},{},[1])
-;

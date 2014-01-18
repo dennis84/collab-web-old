@@ -3,31 +3,22 @@ var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
   lineHeight: 23,
-  code: '',
 
   initialize: function(options) {
     this.listenTo(window.connection, 'code', this.updateCode)
-    this.listenTo(window.connection, 'clean', this.cleanCode)
   },
 
-  cleanCode: function(data) {
-    var content = data.content
-      , node = document.createElement('code')
-
-    this.renderCode(data.name, content)
-  },
-  
   updateCode: function(data) {
-    this.renderCode(data.name, data.buffer)
-  },
+    var language = hljs.getLanguage(data.lang)
+      , $code = $('<code class="hljs ' + data.lang + '"></code>')
 
-  renderCode: function(filename, content) {
-    var node = document.createElement('code')
-    this.code = content
+    if(!language) {
+      var content = hljs.highlightAuto(data.buffer).value
+    } else {
+      var content = hljs.highlight(data.lang, data.buffer).value
+    }
 
-    node.appendChild(document.createTextNode(content))
-    hljs.highlightBlock(node, hljs.tabReplace)
-
-    this.$el.html(node)
+    $code.html(content)
+    this.$el.html($code)
   }
 })

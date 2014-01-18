@@ -13,7 +13,7 @@ module.exports = Backbone.View.extend({
   },
 
   update: function(data) {
-    this.$('#filename').html('⇒ ' + data.name)
+    this.$('#filename').html('⇒ ' + data.path)
   },
 
   updateNbMembers: function(data) {
