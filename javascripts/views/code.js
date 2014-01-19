@@ -18,7 +18,17 @@ module.exports = Backbone.View.extend({
       var content = hljs.highlight(data.lang, data.buffer).value
     }
 
-    $code.html(content)
+    $code.html(this.withLineNumbers(content))
     this.$el.html($code)
+  },
+
+  withLineNumbers: function(code) {
+    var linesNum = (1 + code.split('\n').length)
+      , lines = new Array(linesNum)
+      , lineNumbersWrapper
+
+    lines = lines.join('<span></span>')
+
+    return code + '<span class="line-numbers-rows">' + lines + '</span>'
   }
 })

@@ -20,7 +20,8 @@ gulp.task('default', function() {
   gulp.watch([
     'javascripts/**',
     '!javascripts/application.pack.js',
-    'stylesheets/*.less'
+    'stylesheets/*.less',
+    'index.html'
   ], function(event) {
     gulp.run(['stylesheets', 'javascripts'])
   })

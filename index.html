@@ -3,16 +3,32 @@
   <head>
     <meta charset="utf-8">
     <title></title>
+    <link href="stylesheets/bootstrap.css" rel="stylesheet">
     <link href="stylesheets/main.css" rel="stylesheet">
   </head>
 
   <body>
-    <pre id="content" class="content"></pre>
-    <div id="cursor" class="cursor"></div>
-    <div id="powerline" class="powerline">
-      <span id="filename" class="filename"></span>
-      <label class="tv"><input id="tv" type="checkbox">TV Mode</label>
-      <span id="online" class="online"></span>
+    <div id="layout" class="layout">
+      <div id="navigation" class="navigation">
+        <div class="logo">Collab</div>
+
+        <h3>Settings</h3>
+        <ul class="list-group">
+          <li class="list-group-item">Online <span id="online" class="badge"></span></li>
+          <li class="list-group-item">Follow <input id="follow" type="checkbox" class="pull-right"></li>
+        </ul>
+        <br>
+
+        <h3>Links</h3>
+        <div class="list-group">
+          <a href="https://github.com/dennis84/collab" class="list-group-item">Source Code</a>
+        </div>
+      </div>
+
+      <div class="editor">
+        <pre id="content" class="content"></pre>
+        <div id="cursor" class="cursor"></div>
+      </div>
     </div>
 
     <script src="javascripts/jquery.js"></script>

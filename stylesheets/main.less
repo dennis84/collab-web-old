@@ -3,47 +3,146 @@
 @import "theme.less";
 
 body {
-  margin: 0;
-  font-size: 22px;
   background: @base03;
-  font-family: 'FantasqueSansMono';
-  text-shadow: 0 1px darken(@base03, 20%);
 }
 
-pre, pre code {
-  font-family: 'FantasqueSansMono';
-  margin: 0;
-  padding: 0;
+.layout {
+  padding-left: 150px;
+  left: 0;
 }
 
-.content {
-  padding-bottom: 100%;
-}
-
-.powerline {
+.navigation {
   position: fixed;
+  width: 150px;
+  top: 0;
+  left: 0;
   bottom: 0;
-  width: 100%;
-  background: @base02;
-  color: @base0;
-  padding: 2px 0;
-  margin: 0;
-  .online, .tv {
-    float: right;
+  background: url(../images/background-light.png);
+  overflow-y: auto;
+  h3 {
+    padding: 10px 15px;
+    font-size: 14px;
+    text-transform: uppercase;
+    font-weight: bold;
+    color: darken(#bdc3c7, 10%);
+  }
+  .logo {
+    margin: 80px 0;
+    text-align: center;
+    font-family: 'FantasqueSansMonoBold';
+    font-size: 30px;
+    color: @base1;
+    letter-spacing: -2px;
+  }
+  .list-group {
+    .list-group-item {
+      border-radius: 0;
+      border: 0;
+      background: none;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #bdc3c7;
+      margin: 0;
+    }
   }
 }
 
-.cursor {
-  position: absolute;
-  width: 1ch;
-  height: 22px;
-  background: #fff;
-  top: 0;
-  left: 0;
-  -webkit-animation: blink 0.8s linear 0s infinite;
-  -moz-animation: blink 0.8s linear 0s infinite;
-  -ms-animation: blink 0.8s linear 0s infinite;
-  -o-animation: blink 0.8s linear 0s infinite;
+@media (max-width: 767px) {
+  .layout {
+    padding-left: 0px;
+  }
+
+  .navigation {
+    left: -150px;
+  }
+}
+
+.editor {
+  position: relative;
+  font-size: 22px;
+  line-height: 23px;
+  font-family: 'FantasqueSansMono';
+  overflow: auto;
+
+  pre, pre > code {
+    margin: 0;
+    padding: 0;
+    background: @base03;
+    border-radius: 0;
+    border: 0;
+    word-wrap: normal;
+    white-space: pre;
+    font-size: 22px;
+    line-height: 23px;
+    text-shadow: 0 1px darken(@base03, 20%);
+    font-family: 'FantasqueSansMono';
+    color: @base0;
+  }
+
+  pre {
+    position: relative;
+    padding-left: 6ch;
+    counter-reset: linenumber;
+  }
+
+  pre > code {
+    position: relative;
+  }
+
+  .line-numbers-rows {
+    background: @base02;
+    position: absolute;
+    pointer-events: none;
+    top: 0;
+    left: -6ch;
+    width: 6ch;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
+  .line-numbers-rows > span {
+    pointer-events: none;
+    display: block;
+    counter-increment: linenumber;
+  }
+
+  .line-numbers-rows > span:before {
+    content: counter(linenumber);
+    color: @base01;
+    display: block;
+    padding-right: 1ch;
+    text-align: right;
+  }
+
+  .content {
+    padding-bottom: 100%;
+  }
+
+  .powerline {
+    position: fixed;
+    bottom: 0;
+    background: @base02;
+    height: 35px;
+    width: 100%;
+    color: @base0;
+    padding: 2px 0;
+    margin: 0;
+  }
+
+  .cursor {
+    position: absolute;
+    width: 1ch;
+    height: 22px;
+    background: #fff;
+    top: 0;
+    left: 0;
+    -webkit-animation: blink 0.8s linear 0s infinite;
+    -moz-animation: blink 0.8s linear 0s infinite;
+    -ms-animation: blink 0.8s linear 0s infinite;
+    -o-animation: blink 0.8s linear 0s infinite;
+  }
 }
 
 @keyframes blink {
@@ -72,6 +171,7 @@ pre, pre code {
 
 ::-webkit-scrollbar {
   width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {

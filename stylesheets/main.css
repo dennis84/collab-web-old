@@ -98,35 +98,121 @@
   background: #073642;
 }
 body {
-  margin: 0;
-  font-size: 22px;
   background: #002b36;
-  font-family: 'FantasqueSansMono';
-  text-shadow: 0 1px #000000;
 }
-pre,
-pre code {
+.layout {
+  padding-left: 150px;
+  left: 0;
+}
+.navigation {
+  position: fixed;
+  width: 150px;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: url(../images/background-light.png);
+  overflow-y: auto;
+}
+.navigation h3 {
+  padding: 10px 15px;
+  font-size: 14px;
+  text-transform: uppercase;
+  font-weight: bold;
+  color: #a1aab0;
+}
+.navigation .logo {
+  margin: 80px 0;
+  text-align: center;
+  font-family: 'FantasqueSansMonoBold';
+  font-size: 30px;
+  color: #93a1a1;
+  letter-spacing: -2px;
+}
+.navigation .list-group .list-group-item {
+  border-radius: 0;
+  border: 0;
+  background: none;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #bdc3c7;
+  margin: 0;
+}
+@media (max-width: 767px) {
+  .layout {
+    padding-left: 0px;
+  }
+  .navigation {
+    left: -150px;
+  }
+}
+.editor {
+  position: relative;
+  font-size: 22px;
+  line-height: 23px;
   font-family: 'FantasqueSansMono';
+  overflow: auto;
+}
+.editor pre,
+.editor pre > code {
   margin: 0;
   padding: 0;
+  background: #002b36;
+  border-radius: 0;
+  border: 0;
+  word-wrap: normal;
+  white-space: pre;
+  font-size: 22px;
+  line-height: 23px;
+  text-shadow: 0 1px #000000;
+  font-family: 'FantasqueSansMono';
+  color: #839496;
 }
-.content {
+.editor pre {
+  position: relative;
+  padding-left: 6ch;
+  counter-reset: linenumber;
+}
+.editor pre > code {
+  position: relative;
+}
+.editor .line-numbers-rows {
+  background: #073642;
+  position: absolute;
+  pointer-events: none;
+  top: 0;
+  left: -6ch;
+  width: 6ch;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+.editor .line-numbers-rows > span {
+  pointer-events: none;
+  display: block;
+  counter-increment: linenumber;
+}
+.editor .line-numbers-rows > span:before {
+  content: counter(linenumber);
+  color: #586e75;
+  display: block;
+  padding-right: 1ch;
+  text-align: right;
+}
+.editor .content {
   padding-bottom: 100%;
 }
-.powerline {
+.editor .powerline {
   position: fixed;
   bottom: 0;
-  width: 100%;
   background: #073642;
+  height: 35px;
+  width: 100%;
   color: #839496;
   padding: 2px 0;
   margin: 0;
 }
-.powerline .online,
-.powerline .tv {
-  float: right;
-}
-.cursor {
+.editor .cursor {
   position: absolute;
   width: 1ch;
   height: 22px;
@@ -191,6 +277,7 @@ pre code {
 }
 ::-webkit-scrollbar {
   width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: #003f50;
