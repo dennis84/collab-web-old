@@ -2,6 +2,7 @@
   "name": "collab-web",
   "dependencies": {
     "gulp": "~3.4.0",
+    "gulp-util": "2.2.12",
     "gulp-browserify": "~0.3.3",
     "gulp-concat": "~2.1.7",
     "gulp-less": "~1.1.10",

@@ -1,4 +1,5 @@
 var Backbone = require('backbone')
+  , templates = require('./templates')
 
 module.exports = Backbone.Router.extend({
   routes: {
@@ -7,6 +8,11 @@ module.exports = Backbone.Router.extend({
   },
 
   home: function() {
+    window.connection.trigger('code', {
+      'buffer': templates['welcome.md'],
+      'lang':   'markdown',
+      'path':   'welcome.md'
+    })
   },
 
   room: function(id) {
