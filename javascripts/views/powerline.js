@@ -6,6 +6,6 @@ module.exports = Backbone.View.extend({
   },
 
   update: function(data) {
-    this.$('#filename').html('⇒ ' + data.path)
+    this.$el.html(data.path)
   }
 })
