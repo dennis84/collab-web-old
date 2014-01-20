@@ -10,7 +10,7 @@ var Backbone = require('backbone')
 Backbone.$ = jQuery
 
 window.connection = new Connection({
-  url: 'ws://localhost:9000'
+  url: 'wss://polar-woodland-4270.herokuapp.com'
 })
 
 var $content    = $('#content')
