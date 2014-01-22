@@ -59,6 +59,8 @@ module.exports = Backbone.Router.extend({
       'lang':   'markdown',
       'path':   'welcome.md'
     })
+
+    window.connection.trigger('cursor', { 'x': 1, 'y': 1 })
   },
 
   room: function(id) {
