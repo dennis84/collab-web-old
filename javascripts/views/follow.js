@@ -1,8 +1,6 @@
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
-  lineHeight: 23,
-
   initialize: function() {
     this.body = $('body')
     this.offset = $(window).height() * 0.3
@@ -18,7 +16,7 @@ module.exports = Backbone.View.extend({
 
   scrollto: function(data) {
     this.body.stop().animate({ scrollTop:
-      ((data.y - 1) * this.lineHeight) - this.offset + 'px'
+      ((data.y - 1) * window.lineHeight) - this.offset + 'px'
     })
   }
 })

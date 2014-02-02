@@ -6,166 +6,146 @@
   font-family: 'FantasqueSansMonoBold';
   src: url('../fonts/FantasqueSansMonoBold.woff') format('woff'), url('../fonts/FantasqueSansMonoBold.ttf') format('truetype');
 }
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-title {
+  color: #8e908c;
+}
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-attribute,
+.hljs-tag,
+.hljs-regexp,
+.ruby .hljs-constant,
+.xml .hljs-tag .hljs-title,
+.xml .hljs-pi,
+.xml .hljs-doctype,
+.html .hljs-doctype,
+.css .hljs-id,
+.css .hljs-class,
+.css .hljs-pseudo {
+  color: #c82829;
+}
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-preprocessor,
+.hljs-pragma,
+.hljs-built_in,
+.hljs-literal,
+.hljs-params,
+.hljs-constant {
+  color: #f5871f;
+}
+/* Tomorrow Yellow */
+.ruby .hljs-class .hljs-title,
+.css .hljs-rules .hljs-attribute {
+  color: #eab700;
+}
+/* Tomorrow Green */
+.hljs-string,
+.hljs-value,
+.hljs-inheritance,
+.hljs-header,
+.ruby .hljs-symbol,
+.xml .hljs-cdata {
+  color: #718c00;
+}
+/* Tomorrow Aqua */
+.css .hljs-hexcolor {
+  color: #3e999f;
+}
+/* Tomorrow Blue */
+.hljs-function,
+.python .hljs-decorator,
+.python .hljs-title,
+.ruby .hljs-function .hljs-title,
+.ruby .hljs-title .hljs-keyword,
+.perl .hljs-sub,
+.javascript .hljs-title,
+.coffeescript .hljs-title {
+  color: #4271ae;
+}
+/* Tomorrow Purple */
+.hljs-keyword,
+.javascript .hljs-function {
+  color: #8959a8;
+}
 .hljs {
   display: block;
-  background: #002b36;
-  color: #839496;
+  background: white;
+  color: #4d4d4c;
+  padding: 0.5em;
 }
-.hljs-comment,
-.hljs-template_comment,
-.diff .hljs-header,
-.hljs-doctype,
-.hljs-pi,
-.lisp .hljs-string,
-.hljs-javadoc {
-  color: #586e75;
-}
-/* Solarized Green */
-.hljs-keyword,
-.hljs-winutils,
-.method,
-.hljs-addition,
-.css .hljs-tag,
-.hljs-request,
-.hljs-status,
-.nginx .hljs-title {
-  color: #859900;
-}
-/* Solarized Cyan */
-.hljs-number,
-.hljs-command,
-.hljs-string,
-.hljs-tag .hljs-value,
-.hljs-rules .hljs-value,
-.hljs-phpdoc,
+.coffeescript .javascript,
+.javascript .xml,
 .tex .hljs-formula,
-.hljs-regexp,
-.hljs-hexcolor,
-.hljs-link_url {
-  color: #2aa198;
-}
-/* Solarized Blue */
-.hljs-title,
-.hljs-localvars,
-.hljs-chunk,
-.hljs-decorator,
-.hljs-built_in,
-.hljs-identifier,
-.vhdl .hljs-literal,
-.hljs-id,
-.css .hljs-function {
-  color: #268bd2;
-}
-/* Solarized Yellow */
-.hljs-attribute,
-.hljs-variable,
-.lisp .hljs-body,
-.smalltalk .hljs-number,
-.hljs-constant,
-.hljs-class .hljs-title,
-.hljs-parent,
-.haskell .hljs-type,
-.hljs-link_reference {
-  color: #b58900;
-}
-/* Solarized Orange */
-.hljs-preprocessor,
-.hljs-preprocessor .hljs-keyword,
-.hljs-pragma,
-.hljs-shebang,
-.hljs-symbol,
-.hljs-symbol .hljs-string,
-.diff .hljs-change,
-.hljs-special,
-.hljs-attr_selector,
-.hljs-subst,
-.hljs-cdata,
-.clojure .hljs-title,
-.css .hljs-pseudo,
-.hljs-header {
-  color: #cb4b16;
-}
-/* Solarized Red */
-.hljs-deletion,
-.hljs-important {
-  color: #dc322f;
-}
-/* Solarized Violet */
-.hljs-link_label {
-  color: #6c71c4;
-}
-.tex .hljs-formula {
-  background: #073642;
+.xml .javascript,
+.xml .vbscript,
+.xml .css,
+.xml .hljs-cdata {
+  opacity: 0.5;
 }
 body {
-  background: #002b36;
+  background: #fafafa;
 }
 .layout {
-  padding-left: 150px;
+  padding-left: 200px;
   left: 0;
 }
 .navigation {
   position: fixed;
-  width: 150px;
+  width: 200px;
   top: 0;
   left: 0;
   bottom: 0;
-  background: url(../images/background-light.png);
-  overflow-y: auto;
+  background: #2d2f30;
+  text-shadow: 0 1px 0 #000;
 }
 .navigation h3 {
-  padding: 10px 15px;
-  font-size: 14px;
+  padding: 15px;
+  margin: 0;
+  font-size: 16px;
   text-transform: uppercase;
-  font-weight: bold;
-  color: #a1aab0;
-}
-.navigation .logo {
-  margin: 80px 0;
-  text-align: center;
-  font-family: 'FantasqueSansMonoBold';
-  font-size: 30px;
-  color: #93a1a1;
-  letter-spacing: -2px;
+  color: #aaaaaa;
+  border-bottom: 1px solid #444444;
+  letter-spacing: 2px;
 }
 .navigation .list-group .list-group-item {
   border-radius: 0;
   border: 0;
-  background: none;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  color: #bdc3c7;
   margin: 0;
+  background: none;
+  color: #999999;
 }
-@media (max-width: 767px) {
-  .layout {
-    padding-left: 0px;
-  }
-  .navigation {
-    left: -150px;
-  }
+.navigation .list-group .list-group-item a {
+  color: #999999;
+}
+.navigation .list-group .list-group-item:hover,
+.navigation .list-group .list-group-item a:hover {
+  background: #262728;
+  text-decoration: none;
 }
 .editor {
   position: relative;
-  font-size: 22px;
-  line-height: 23px;
+  font-size: 18px;
+  line-height: 19px;
   font-family: 'FantasqueSansMono';
-  overflow: auto;
 }
 .editor pre,
 .editor pre > code {
   margin: 0;
   padding: 0;
-  background: #002b36;
+  background: #fafafa;
   border-radius: 0;
   border: 0;
   word-wrap: normal;
   white-space: pre;
-  font-size: 22px;
-  line-height: 23px;
-  text-shadow: 0 1px #000000;
+  font-size: 18px;
+  line-height: 19px;
+  text-shadow: 0 1px #fff;
   font-family: 'FantasqueSansMono';
-  color: #839496;
+  color: #93a1a1;
 }
 .editor pre {
   position: relative;
@@ -176,7 +156,7 @@ body {
   position: relative;
 }
 .editor .line-numbers-rows {
-  background: #073642;
+  background: #eeeeee;
   position: absolute;
   pointer-events: none;
   top: 0;
@@ -194,7 +174,7 @@ body {
 }
 .editor .line-numbers-rows > span:before {
   content: counter(linenumber);
-  color: #586e75;
+  color: #aaaaaa;
   display: block;
   padding-right: 1ch;
   text-align: right;
@@ -205,23 +185,31 @@ body {
 .editor .powerline {
   position: fixed;
   bottom: 0;
-  background: #073642;
-  height: 23px;
+  background: #eeeeee;
+  height: 19px;
   width: 100%;
-  color: #839496;
+  color: #aaaaaa;
   margin: 0;
 }
 .editor .cursor {
   position: absolute;
   width: 1ch;
-  height: 22px;
-  background: #fff;
+  height: 18px;
+  background: #999999;
   top: 0;
   left: 0;
   -webkit-animation: blink 0.8s linear 0s infinite;
   -moz-animation: blink 0.8s linear 0s infinite;
   -ms-animation: blink 0.8s linear 0s infinite;
   -o-animation: blink 0.8s linear 0s infinite;
+}
+@media (max-width: 767px) {
+  .layout {
+    padding-left: 0px;
+  }
+  .navigation {
+    left: -150px;
+  }
 }
 @keyframes blink {
   0% {
@@ -279,17 +267,17 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #003f50;
+  background: #eeeeee;
   -webkit-box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.1);
 }
 ::-webkit-scrollbar-thumb {
-  background: #00232c;
+  background: #aaaaaa;
   -webkit-box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.2);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #00232c;
+  background: #aaaaaa;
 }
 ::-webkit-scrollbar-thumb:active {
-  background: #00232c;
+  background: #aaaaaa;
   -webkit-box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.3);
 }

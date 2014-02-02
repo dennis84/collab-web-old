@@ -1,4 +1,5 @@
 var Backbone = require('backbone')
+  , _ = require('underscore')
   , Connection = require('./models/connection')
   , Router = require('./router')
   , Code = require('./views/code')
@@ -7,7 +8,10 @@ var Backbone = require('backbone')
   , Navigation = require('./views/navigation')
 
 Backbone.$ = jQuery
+_.templateSettings.interpolate = /\{\{(.+?)\}\}/g
+_.templateSettings.evaluate = /\{\%(.+?)\%\}/g
 
+window.lineHeight = 19
 window.connection = new Connection({
   url: 'wss://polar-woodland-4270.herokuapp.com'
 })

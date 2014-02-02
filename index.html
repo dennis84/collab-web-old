@@ -11,20 +11,16 @@
   <body>
     <div id="layout" class="layout">
       <div id="navigation" class="navigation">
-        <div class="logo">Collab</div>
-
-        <h3>Settings</h3>
+        <h3>Collab</h3>
         <ul class="list-group">
-          <li class="list-group-item">Online <span id="online" class="badge"></span></li>
-          <li class="list-group-item">Follow <input id="follow" type="checkbox" class="pull-right"></li>
+          <li class="list-group-item">Follow Cursor <input id="follow" type="checkbox" class="pull-right"></li>
+          <li class="list-group-item"><a href="https://github.com/dennis84/vim-collab">VIM Plugin</a></li>
+          <li class="list-group-item"><a href="https://github.com/dennis84/collab">Source Code</a></li>
+          <li class="list-group-item">Online <span id="online" class="label label-primary pull-right"></span></li>
         </ul>
-        <br>
 
-        <h3>Links</h3>
-        <div class="list-group">
-          <a href="https://github.com/dennis84/vim-collab" class="list-group-item">VIM Plugin</a>
-          <a href="https://github.com/dennis84/collab" class="list-group-item">Source Code</a>
-        </div>
+        <h3>Who's Online</h3>
+        <ul id="members" class="list-group"></ul>
       </div>
 
       <div class="editor">

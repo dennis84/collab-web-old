@@ -1,5 +1,6 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 var Backbone = require('backbone')
+  , _ = require('underscore')
   , Connection = require('./models/connection')
   , Router = require('./router')
   , Code = require('./views/code')
@@ -8,7 +9,10 @@ var Backbone = require('backbone')
   , Navigation = require('./views/navigation')
 
 Backbone.$ = jQuery
+_.templateSettings.interpolate = /\{\{(.+?)\}\}/g
+_.templateSettings.evaluate = /\{\%(.+?)\%\}/g
 
+window.lineHeight = 19
 window.connection = new Connection({
   url: 'wss://polar-woodland-4270.herokuapp.com'
 })
@@ -26,7 +30,7 @@ window.router = new Router
 
 Backbone.history.start()
 
-},{"./models/connection":2,"./router":3,"./views/code":5,"./views/cursor":6,"./views/navigation":8,"./views/powerline":9,"backbone":10}],2:[function(require,module,exports){
+},{"./models/connection":2,"./router":3,"./views/code":5,"./views/cursor":6,"./views/navigation":8,"./views/powerline":9,"backbone":10,"underscore":84}],2:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.Model.extend({
@@ -39,6 +43,10 @@ module.exports = Backbone.Model.extend({
     this.socket.onmessage = function(e) {
       var r = JSON.parse(e.data)
       model.trigger(r.t, r.d)
+    }
+
+    this.socket.onopen = function() {
+      model.trigger('opened', model)
     }
   }
 })
@@ -73,14 +81,12 @@ module.exports = Backbone.Router.extend({
 })
 
 },{"./templates":4,"backbone":10}],4:[function(require,module,exports){
-module.exports = {"welcome.md":"     _________________________________________ \n    / Collab - A screen sharing tool for pair \\\n    | programming.                            |\n    |                                         |\n    | Collab is open source software. This    |\n    | work is licensed under the MIT License, |\n    \\ Copyright © Dennis Dietrich.           /\n     ----------------------------------------- \n            \\   ^__^\n             \\  (oo)\\_______\n                (__)\\       )\\/\\\n                    ||----w |\n                    ||     ||\n"}
+module.exports = {"members.html":"{% _.each(members, function(member) { %}\n  <li class=\"list-group-item\">{{ member }}</li>\n{% }) %}\n","welcome.md":"     _________________________________________ \n    / Collab - A screen sharing tool for pair \\\n    | programming.                            |\n    |                                         |\n    | Collab is open source software. This    |\n    | work is licensed under the MIT License, |\n    \\ Copyright © Dennis Dietrich.           /\n     ----------------------------------------- \n            \\   ^__^\n             \\  (oo)\\_______\n                (__)\\       )\\/\\\n                    ||----w |\n                    ||     ||\n"}
 },{}],5:[function(require,module,exports){
 var Backbone = require('backbone')
   , hljs = require('highlight.js')
 
 module.exports = Backbone.View.extend({
-  lineHeight: 23,
-
   initialize: function(options) {
     this.listenTo(window.connection, 'code', this.updateCode)
   },
@@ -114,15 +120,13 @@ module.exports = Backbone.View.extend({
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
-  lineHeight: 23,
-
   initialize: function() {
     this.listenTo(window.connection, 'cursor', this.update)
   },
 
   update: function(data) {
     this.$el.css({
-      'top':  (data.y - 1) * this.lineHeight + 'px',
+      'top':  (data.y - 1) * window.lineHeight + 'px',
       'left': (data.x - 1 + 6) + 'ch'
     })
   }
@@ -132,8 +136,6 @@ module.exports = Backbone.View.extend({
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
-  lineHeight: 23,
-
   initialize: function() {
     this.body = $('body')
     this.offset = $(window).height() * 0.3
@@ -149,14 +151,16 @@ module.exports = Backbone.View.extend({
 
   scrollto: function(data) {
     this.body.stop().animate({ scrollTop:
-      ((data.y - 1) * this.lineHeight) - this.offset + 'px'
+      ((data.y - 1) * window.lineHeight) - this.offset + 'px'
     })
   }
 })
 
 },{"backbone":10}],8:[function(require,module,exports){
 var Backbone = require('backbone')
+  , _ = require('underscore')
   , Follow = require('./follow')
+  , templates = require('../templates')
 
 module.exports = Backbone.View.extend({
   events: {
@@ -165,11 +169,17 @@ module.exports = Backbone.View.extend({
 
   initialize: function() {
     this.listenTo(window.connection, 'online', this.updateNbMembers)
+    this.listenTo(window.connection, 'online', this.updateMembers)
     this.follow = new Follow
   },
 
   updateNbMembers: function(data) {
-    this.$('#online').html(data)
+    this.$('#online').html(data.length)
+  },
+
+  updateMembers: function(data) {
+    var html = _.template(templates['members.html'], { 'members': data })
+    this.$('#members').html(html)
   },
 
   toggleFollow: function(e) {
@@ -181,7 +191,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"./follow":7,"backbone":10}],9:[function(require,module,exports){
+},{"../templates":4,"./follow":7,"backbone":10,"underscore":84}],9:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({

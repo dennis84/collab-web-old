@@ -11,5 +11,9 @@ module.exports = Backbone.Model.extend({
       var r = JSON.parse(e.data)
       model.trigger(r.t, r.d)
     }
+
+    this.socket.onopen = function() {
+      model.trigger('opened', model)
+    }
   }
 })

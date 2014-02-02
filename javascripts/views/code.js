@@ -2,8 +2,6 @@ var Backbone = require('backbone')
   , hljs = require('highlight.js')
 
 module.exports = Backbone.View.extend({
-  lineHeight: 23,
-
   initialize: function(options) {
     this.listenTo(window.connection, 'code', this.updateCode)
   },
