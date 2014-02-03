@@ -13,26 +13,38 @@
       <div id="navigation" class="navigation">
         <h3>Collab</h3>
         <ul class="list-group">
-          <li class="list-group-item">Follow Cursor <input id="follow" type="checkbox" class="pull-right"></li>
           <li class="list-group-item"><a href="https://github.com/dennis84/vim-collab">VIM Plugin</a></li>
           <li class="list-group-item"><a href="https://github.com/dennis84/collab">Source Code</a></li>
-          <li class="list-group-item">Online <span id="online" class="label label-primary pull-right"></span></li>
         </ul>
 
-        <h3>Who's Online</h3>
-        <ul id="members" class="list-group"></ul>
+        <div id="settings" class="hidden">
+          <h3>Settings</h3>
+          <ul class="list-group">
+            <li class="list-group-item">Follow Cursor <input id="follow" type="checkbox" class="pull-right"></li>
+            <li class="list-group-item">Online <span id="online" class="label label-primary pull-right"></span></li>
+            <li class="list-group-item"><a href="#" id="change-username">Change Username</a></li>
+          </ul>
+
+          <h3>Who's Online</h3>
+          <ul id="members" class="list-group"></ul>
+        </div>
       </div>
 
-      <div class="editor">
-        <pre id="content" class="content"></pre>
-        <div id="cursor" class="cursor"></div>
-        <div id="powerline" class="powerline">
-          <span id="filename" class="filename"></span>
+      <div class="editor-wrapper">
+        <div id="editor" class="editor">
+          <pre id="content" class="content"></pre>
+          <div id="cursor" class="cursor"></div>
+          <div id="powerline" class="powerline">
+            <span id="filename" class="filename"></span>
+          </div>
         </div>
       </div>
     </div>
 
+    <div id="modal" class="modal fade bs-modal-sm"></div>
+
     <script src="javascripts/jquery.js"></script>
+    <script src="javascripts/bootstrap.js"></script>
     <script src="javascripts/application.pack.js"></script>
   </body>
 </html>

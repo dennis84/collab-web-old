@@ -1,6 +1,8 @@
 @import "colors.less";
 @import "fonts.less";
 @import "theme.less";
+@import "form.less";
+@import "modal.less";
 
 @editor-font-size: 18px;
 @editor-line-height: 19px;
@@ -53,6 +55,10 @@ html, body {
     }
   }
 }
+.editor-wrapper {
+  height: 100%;
+  padding-bottom: @editor-line-height * 2;
+}
 
 .editor {
   position: relative;
@@ -60,7 +66,7 @@ html, body {
   font-size: @editor-font-size;
   line-height: @editor-line-height;
   font-family: 'FantasqueSansMono';
-  padding-bottom: @editor-line-height * 2;
+  overflow-y: auto;
 
   pre, pre > code {
     margin: 0;
@@ -116,10 +122,7 @@ html, body {
   }
 
   .content {
-    padding-bottom: 100%;
-    overflow: auto;
     width: 100%;
-    overflow: auto;
   }
 
   .powerline {

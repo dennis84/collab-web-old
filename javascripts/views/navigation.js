@@ -5,13 +5,19 @@ var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
   events: {
-    'click #follow': 'toggleFollow'
+    'click #follow': 'toggleFollow',
+    'click #change-username': 'changeUsername'
   },
 
   initialize: function() {
     this.listenTo(window.connection, 'online', this.updateNbMembers)
     this.listenTo(window.connection, 'online', this.updateMembers)
+    this.listenTo(window.connection, 'opened', this.updateNav)
     this.follow = new Follow
+  },
+
+  updateNav: function() {
+    this.$("#settings").removeClass('hidden')
   },
 
   updateNbMembers: function(data) {
@@ -29,5 +35,10 @@ module.exports = Backbone.View.extend({
     } else {
       this.follow.stop()
     }
+  },
+
+  changeUsername: function(e) {
+    e.preventDefault()
+    window.username.show()
   }
 })
