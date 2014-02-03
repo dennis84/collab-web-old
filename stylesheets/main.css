@@ -86,10 +86,14 @@
 .xml .hljs-cdata {
   opacity: 0.5;
 }
+html,
 body {
   background: #fafafa;
+  overflow: hidden;
+  height: 100%;
 }
 .layout {
+  height: 100%;
   padding-left: 200px;
   left: 0;
 }
@@ -128,9 +132,11 @@ body {
 }
 .editor {
   position: relative;
+  height: 100%;
   font-size: 18px;
   line-height: 19px;
   font-family: 'FantasqueSansMono';
+  padding-bottom: 38px;
 }
 .editor pre,
 .editor pre > code {
@@ -146,6 +152,7 @@ body {
   text-shadow: 0 1px #fff;
   font-family: 'FantasqueSansMono';
   color: #93a1a1;
+  height: 100%;
 }
 .editor pre {
   position: relative;
@@ -181,15 +188,24 @@ body {
 }
 .editor .content {
   padding-bottom: 100%;
+  width: 100%;
+  overflow: auto;
 }
 .editor .powerline {
   position: fixed;
   bottom: 0;
   background: #eeeeee;
-  height: 19px;
+  height: 38px;
   width: 100%;
   color: #aaaaaa;
   margin: 0;
+}
+.editor .powerline .filename {
+  display: inline-block;
+  background: #fff;
+  margin: 5px;
+  padding: 5px 10px;
+  border-radius: 20px;
 }
 .editor .cursor {
   position: absolute;
