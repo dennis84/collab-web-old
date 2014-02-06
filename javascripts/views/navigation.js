@@ -1,6 +1,7 @@
 var Backbone = require('backbone')
   , _ = require('underscore')
   , Follow = require('./follow')
+  , Member = require('./member')
   , templates = require('../templates')
 
 module.exports = Backbone.View.extend({
@@ -10,8 +11,9 @@ module.exports = Backbone.View.extend({
   },
 
   initialize: function() {
-    this.listenTo(window.connection, 'online', this.updateNbMembers)
-    this.listenTo(window.connection, 'online', this.updateMembers)
+    this.listenTo(window.members, 'reset', this.resetMembers)
+    this.listenTo(window.members, 'add', this.addMember)
+    this.listenTo(window.members, 'remove', this.removeMember)
     this.listenTo(window.connection, 'opened', this.updateNav)
     this.follow = new Follow
   },
@@ -20,13 +22,23 @@ module.exports = Backbone.View.extend({
     this.$("#settings").removeClass('hidden')
   },
 
-  updateNbMembers: function(data) {
-    this.$('#online').html(data.length)
+  resetMembers: function(members) {
+    this.$('#members').html('')
+    members.each(this.addMember, this)
   },
 
-  updateMembers: function(data) {
-    var html = _.template(templates['members.html'], { 'members': data })
-    this.$('#members').html(html)
+  addMember: function(member) {
+    var view = new Member({
+      model: member,
+      collection: window.members
+    })
+
+    this.$('#members').append(view.render().el)
+    this.$('#online').html(window.members.length)
+  },
+
+  removeMember: function() {
+    this.resetMembers(window.members)
   },
 
   toggleFollow: function(e) {

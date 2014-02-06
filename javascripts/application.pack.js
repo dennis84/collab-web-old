@@ -1,5 +1,13 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);throw new Error("Cannot find module '"+o+"'")}var f=n[o]={exports:{}};t[o][0].call(f.exports,function(e){var n=t[o][1][e];return s(n?n:e)},f,f.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 var Backbone = require('backbone')
+  , Member = require('../models/member')
+
+module.exports = Backbone.Collection.extend({
+  model: Member
+})
+
+},{"../models/member":4,"backbone":14}],2:[function(require,module,exports){
+var Backbone = require('backbone')
   , _ = require('underscore')
   , Connection = require('./models/connection')
   , Router = require('./router')
@@ -8,14 +16,28 @@ var Backbone = require('backbone')
   , Powerline = require('./views/powerline')
   , Navigation = require('./views/navigation')
   , Username = require('./views/username')
+  , Members = require('./collections/members')
 
 Backbone.$ = jQuery
 _.templateSettings.interpolate = /\{\{(.+?)\}\}/g
 _.templateSettings.evaluate = /\{\%(.+?)\%\}/g
 
 window.lineHeight = 19
+window.members = new Members
 window.connection = new Connection({
   url: 'wss://polar-woodland-4270.herokuapp.com'
+})
+
+window.connection.on('opened', function(conn) {
+  conn.socket.send(JSON.stringify({ 't': 'members' }))
+})
+
+window.connection.on('members', function(data) {
+  window.members.reset(data)
+})
+
+window.connection.on('leave', function(id) {
+  window.members.remove(id)
 })
 
 var $content    = $('#content')
@@ -33,7 +55,7 @@ window.router = new Router
 
 Backbone.history.start()
 
-},{"./models/connection":2,"./router":3,"./views/code":5,"./views/cursor":6,"./views/navigation":8,"./views/powerline":9,"./views/username":10,"backbone":11,"underscore":85}],2:[function(require,module,exports){
+},{"./collections/members":1,"./models/connection":3,"./router":5,"./views/code":7,"./views/cursor":8,"./views/navigation":11,"./views/powerline":12,"./views/username":13,"backbone":14,"underscore":88}],3:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.Model.extend({
@@ -54,7 +76,13 @@ module.exports = Backbone.Model.extend({
   }
 })
 
-},{"backbone":11}],3:[function(require,module,exports){
+},{"backbone":14}],4:[function(require,module,exports){
+var Backbone = require('backbone')
+
+module.exports = Backbone.Model.extend({
+})
+
+},{"backbone":14}],5:[function(require,module,exports){
 var Backbone = require('backbone')
   , templates = require('./templates')
 
@@ -83,9 +111,9 @@ module.exports = Backbone.Router.extend({
   }
 })
 
-},{"./templates":4,"backbone":11}],4:[function(require,module,exports){
-module.exports = {"members.html":"{% _.each(members, function(member) { %}\n  <li class=\"list-group-item\">{{ member }}</li>\n{% }) %}\n","username.html":"<div class=\"modal-dialog modal-sm\">\n  <div class=\"modal-content\">\n    <form>\n      <div class=\"modal-body\">\n        <label for=\"username\">Username</label>\n        <input type=\"text\" class=\"form-control input-lg\" id=\"username\">\n      </div>\n\n      <div class=\"modal-footer\">\n        <button type=\"button\" class=\"btn btn-default\" data-dismiss=\"modal\">Close</button>\n        <button type=\"submit\" class=\"btn btn-primary\" id=\"save-username\">Apply</button>\n      </div>\n    </form>\n  </div>\n</div>\n","welcome.md":"     _________________________________________ \n    / Collab - A screen sharing tool for pair \\\n    | programming.                            |\n    |                                         |\n    | Collab is open source software. This    |\n    | work is licensed under the MIT License, |\n    \\ Copyright © Dennis Dietrich.           /\n     ----------------------------------------- \n            \\   ^__^\n             \\  (oo)\\_______\n                (__)\\       )\\/\\\n                    ||----w |\n                    ||     ||\n"}
-},{}],5:[function(require,module,exports){
+},{"./templates":6,"backbone":14}],6:[function(require,module,exports){
+module.exports = {"member.html":"<li class=\"list-group-item\">{{ name }}</li>\n","username.html":"<div class=\"modal-dialog modal-sm\">\n  <div class=\"modal-content\">\n    <form>\n      <div class=\"modal-body\">\n        <label for=\"username\">Username</label>\n        <input type=\"text\" class=\"form-control input-lg\" id=\"username\">\n      </div>\n\n      <div class=\"modal-footer\">\n        <button type=\"button\" class=\"btn btn-default\" data-dismiss=\"modal\">Close</button>\n        <button type=\"submit\" class=\"btn btn-primary\" id=\"save-username\">Apply</button>\n      </div>\n    </form>\n  </div>\n</div>\n","welcome.md":"     _________________________________________ \n    / Collab - A screen sharing tool for pair \\\n    | programming.                            |\n    |                                         |\n    | Collab is open source software. This    |\n    | work is licensed under the MIT License, |\n    \\ Copyright © Dennis Dietrich.           /\n     ----------------------------------------- \n            \\   ^__^\n             \\  (oo)\\_______\n                (__)\\       )\\/\\\n                    ||----w |\n                    ||     ||\n"}
+},{}],7:[function(require,module,exports){
 var Backbone = require('backbone')
   , hljs = require('highlight.js')
 
@@ -119,7 +147,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"backbone":11,"highlight.js":13}],6:[function(require,module,exports){
+},{"backbone":14,"highlight.js":16}],8:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
@@ -135,7 +163,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"backbone":11}],7:[function(require,module,exports){
+},{"backbone":14}],9:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
@@ -159,10 +187,25 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"backbone":11}],8:[function(require,module,exports){
+},{"backbone":14}],10:[function(require,module,exports){
+var Backbone = require('backbone')
+  , _ = require('underscore')
+  , templates = require('../templates')
+
+module.exports = Backbone.View.extend({
+  tagName: 'li',
+
+  render: function() {
+    this.$el.html(_.template(templates['member.html'], this.model.toJSON()))
+    return this
+  }
+})
+
+},{"../templates":6,"backbone":14,"underscore":88}],11:[function(require,module,exports){
 var Backbone = require('backbone')
   , _ = require('underscore')
   , Follow = require('./follow')
+  , Member = require('./member')
   , templates = require('../templates')
 
 module.exports = Backbone.View.extend({
@@ -172,8 +215,9 @@ module.exports = Backbone.View.extend({
   },
 
   initialize: function() {
-    this.listenTo(window.connection, 'online', this.updateNbMembers)
-    this.listenTo(window.connection, 'online', this.updateMembers)
+    this.listenTo(window.members, 'reset', this.resetMembers)
+    this.listenTo(window.members, 'add', this.addMember)
+    this.listenTo(window.members, 'remove', this.removeMember)
     this.listenTo(window.connection, 'opened', this.updateNav)
     this.follow = new Follow
   },
@@ -182,13 +226,23 @@ module.exports = Backbone.View.extend({
     this.$("#settings").removeClass('hidden')
   },
 
-  updateNbMembers: function(data) {
-    this.$('#online').html(data.length)
+  resetMembers: function(members) {
+    this.$('#members').html('')
+    members.each(this.addMember, this)
   },
 
-  updateMembers: function(data) {
-    var html = _.template(templates['members.html'], { 'members': data })
-    this.$('#members').html(html)
+  addMember: function(member) {
+    var view = new Member({
+      model: member,
+      collection: window.members
+    })
+
+    this.$('#members').append(view.render().el)
+    this.$('#online').html(window.members.length)
+  },
+
+  removeMember: function() {
+    this.resetMembers(window.members)
   },
 
   toggleFollow: function(e) {
@@ -205,7 +259,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"../templates":4,"./follow":7,"backbone":11,"underscore":85}],9:[function(require,module,exports){
+},{"../templates":6,"./follow":9,"./member":10,"backbone":14,"underscore":88}],12:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
@@ -218,7 +272,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"backbone":11}],10:[function(require,module,exports){
+},{"backbone":14}],13:[function(require,module,exports){
 var Backbone = require('backbone')
   , _ = require('underscore')
   , templates = require('../templates')
@@ -250,7 +304,7 @@ module.exports = Backbone.View.extend({
     }
 
     window.connection.socket.send(JSON.stringify({
-      't': 'user',
+      't': 'member',
       'd': username
     }))
 
@@ -258,7 +312,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"../templates":4,"backbone":11,"underscore":85}],11:[function(require,module,exports){
+},{"../templates":6,"backbone":14,"underscore":88}],14:[function(require,module,exports){
 //     Backbone.js 1.1.0
 
 //     (c) 2010-2011 Jeremy Ashkenas, DocumentCloud Inc.
@@ -1841,7 +1895,7 @@ module.exports = Backbone.View.extend({
 
 }).call(this);
 
-},{"underscore":85}],12:[function(require,module,exports){
+},{"underscore":88}],15:[function(require,module,exports){
 var Highlight = function() {
 
   /* Utility functions */
@@ -2520,7 +2574,7 @@ var Highlight = function() {
   };
 };
 module.exports = Highlight;
-},{}],13:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 var Highlight = require('./highlight');
 var hljs = new Highlight();
 hljs.registerLanguage('bash', require('./languages/bash.js'));
@@ -2595,7 +2649,7 @@ hljs.registerLanguage('parser3', require('./languages/parser3.js'));
 hljs.registerLanguage('clojure', require('./languages/clojure.js'));
 hljs.registerLanguage('go', require('./languages/go.js'));
 module.exports = hljs;
-},{"./highlight":12,"./languages/1c.js":14,"./languages/actionscript.js":15,"./languages/apache.js":16,"./languages/applescript.js":17,"./languages/asciidoc.js":18,"./languages/autohotkey.js":19,"./languages/avrasm.js":20,"./languages/axapta.js":21,"./languages/bash.js":22,"./languages/brainfuck.js":23,"./languages/clojure.js":24,"./languages/cmake.js":25,"./languages/coffeescript.js":26,"./languages/cpp.js":27,"./languages/cs.js":28,"./languages/css.js":29,"./languages/d.js":30,"./languages/delphi.js":31,"./languages/diff.js":32,"./languages/django.js":33,"./languages/dos.js":34,"./languages/erlang-repl.js":35,"./languages/erlang.js":36,"./languages/fix.js":37,"./languages/fsharp.js":38,"./languages/glsl.js":39,"./languages/go.js":40,"./languages/haml.js":41,"./languages/handlebars.js":42,"./languages/haskell.js":43,"./languages/http.js":44,"./languages/ini.js":45,"./languages/java.js":46,"./languages/javascript.js":47,"./languages/json.js":48,"./languages/lasso.js":49,"./languages/lisp.js":50,"./languages/livecodeserver.js":51,"./languages/lua.js":52,"./languages/makefile.js":53,"./languages/markdown.js":54,"./languages/mathematica.js":55,"./languages/matlab.js":56,"./languages/mel.js":57,"./languages/mizar.js":58,"./languages/nginx.js":59,"./languages/objectivec.js":60,"./languages/ocaml.js":61,"./languages/oxygene.js":62,"./languages/parser3.js":63,"./languages/perl.js":64,"./languages/php.js":65,"./languages/profile.js":66,"./languages/python.js":67,"./languages/r.js":68,"./languages/rib.js":69,"./languages/rsl.js":70,"./languages/ruby.js":71,"./languages/ruleslanguage.js":72,"./languages/rust.js":73,"./languages/scala.js":74,"./languages/scilab.js":75,"./languages/scss.js":76,"./languages/smalltalk.js":77,"./languages/sql.js":78,"./languages/tex.js":79,"./languages/vala.js":80,"./languages/vbnet.js":81,"./languages/vbscript.js":82,"./languages/vhdl.js":83,"./languages/xml.js":84}],14:[function(require,module,exports){
+},{"./highlight":15,"./languages/1c.js":17,"./languages/actionscript.js":18,"./languages/apache.js":19,"./languages/applescript.js":20,"./languages/asciidoc.js":21,"./languages/autohotkey.js":22,"./languages/avrasm.js":23,"./languages/axapta.js":24,"./languages/bash.js":25,"./languages/brainfuck.js":26,"./languages/clojure.js":27,"./languages/cmake.js":28,"./languages/coffeescript.js":29,"./languages/cpp.js":30,"./languages/cs.js":31,"./languages/css.js":32,"./languages/d.js":33,"./languages/delphi.js":34,"./languages/diff.js":35,"./languages/django.js":36,"./languages/dos.js":37,"./languages/erlang-repl.js":38,"./languages/erlang.js":39,"./languages/fix.js":40,"./languages/fsharp.js":41,"./languages/glsl.js":42,"./languages/go.js":43,"./languages/haml.js":44,"./languages/handlebars.js":45,"./languages/haskell.js":46,"./languages/http.js":47,"./languages/ini.js":48,"./languages/java.js":49,"./languages/javascript.js":50,"./languages/json.js":51,"./languages/lasso.js":52,"./languages/lisp.js":53,"./languages/livecodeserver.js":54,"./languages/lua.js":55,"./languages/makefile.js":56,"./languages/markdown.js":57,"./languages/mathematica.js":58,"./languages/matlab.js":59,"./languages/mel.js":60,"./languages/mizar.js":61,"./languages/nginx.js":62,"./languages/objectivec.js":63,"./languages/ocaml.js":64,"./languages/oxygene.js":65,"./languages/parser3.js":66,"./languages/perl.js":67,"./languages/php.js":68,"./languages/profile.js":69,"./languages/python.js":70,"./languages/r.js":71,"./languages/rib.js":72,"./languages/rsl.js":73,"./languages/ruby.js":74,"./languages/ruleslanguage.js":75,"./languages/rust.js":76,"./languages/scala.js":77,"./languages/scilab.js":78,"./languages/scss.js":79,"./languages/smalltalk.js":80,"./languages/sql.js":81,"./languages/tex.js":82,"./languages/vala.js":83,"./languages/vbnet.js":84,"./languages/vbscript.js":85,"./languages/vhdl.js":86,"./languages/xml.js":87}],17:[function(require,module,exports){
 module.exports = function(hljs){
   var IDENT_RE_RU = '[a-zA-Zа-яА-Я][a-zA-Z0-9_а-яА-Я]*';
   var OneS_KEYWORDS = 'возврат дата для если и или иначе иначеесли исключение конецесли ' +
@@ -2681,7 +2735,7 @@ module.exports = function(hljs){
     ]
   };
 };
-},{}],15:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 module.exports = function(hljs) {
   var IDENT_RE = '[a-zA-Z_$][a-zA-Z0-9_$]*';
   var IDENT_FUNC_RETURN_TYPE_RE = '([*]|[a-zA-Z_$][a-zA-Z0-9_$]*)';
@@ -2754,7 +2808,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],16:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 module.exports = function(hljs) {
   var NUMBER = {className: 'number', begin: '[\\$%]\\d+'};
   return {
@@ -2799,7 +2853,7 @@ module.exports = function(hljs) {
     illegal: /\S/
   };
 };
-},{}],17:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 module.exports = function(hljs) {
   var STRING = hljs.inherit(hljs.QUOTE_STRING_MODE, {illegal: ''});
   var PARAMS = {
@@ -2894,7 +2948,7 @@ module.exports = function(hljs) {
     illegal: '//'
   };
 };
-},{}],18:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
@@ -3087,7 +3141,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],19:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 module.exports = function(hljs) {
   var BACKTICK_ESCAPE = {
     className: 'escape',
@@ -3147,7 +3201,7 @@ module.exports = function(hljs) {
     ])
   }
 };
-},{}],20:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -3203,7 +3257,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],21:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: 'false int abstract private char boolean static null if for true ' +
@@ -3238,7 +3292,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],22:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 module.exports = function(hljs) {
   var VAR = {
     className: 'variable',
@@ -3300,7 +3354,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],23:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 module.exports = function(hljs){
   var LITERAL = {
     className: 'literal',
@@ -3335,7 +3389,7 @@ module.exports = function(hljs){
     ]
   };
 };
-},{}],24:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 module.exports = function(hljs) {
   var keywords = {
     built_in:
@@ -3432,7 +3486,7 @@ module.exports = function(hljs) {
     ]
   }
 };
-},{}],25:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -3470,7 +3524,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],26:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 module.exports = function(hljs) {
   var KEYWORDS = {
     keyword:
@@ -3600,7 +3654,7 @@ module.exports = function(hljs) {
     ])
   };
 };
-},{}],27:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 module.exports = function(hljs) {
   var CPP_KEYWORDS = {
     keyword: 'false int float while private char catch export virtual operator sizeof ' +
@@ -3656,7 +3710,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],28:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 module.exports = function(hljs) {
   var KEYWORDS =
     // Normal keywords.
@@ -3722,7 +3776,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],29:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 module.exports = function(hljs) {
   var IDENT_RE = '[a-zA-Z-][a-zA-Z0-9_-]*';
   var FUNCTION = {
@@ -3824,7 +3878,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],30:[function(require,module,exports){
+},{}],33:[function(require,module,exports){
 module.exports = /**
  * Known issues:
  *
@@ -4083,7 +4137,7 @@ function(hljs) {
 		]
 	};
 };
-},{}],31:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 module.exports = function(hljs) {
   var KEYWORDS =
     'exports register file shl array record property for mod while set ally label uses raise not ' +
@@ -4142,7 +4196,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],32:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
@@ -4181,7 +4235,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],33:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 module.exports = function(hljs) {
   var FILTER = {
     className: 'filter',
@@ -4236,7 +4290,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],34:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -4267,7 +4321,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],35:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -4318,7 +4372,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],36:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 module.exports = function(hljs) {
   var BASIC_ATOM_RE = '[a-z\'][a-zA-Z0-9_\']*';
   var FUNCTION_NAME_RE = '(' + BASIC_ATOM_RE + ':' + BASIC_ATOM_RE + '|' + BASIC_ATOM_RE + ')';
@@ -4472,7 +4526,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],37:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
@@ -4501,7 +4555,7 @@ module.exports = function(hljs) {
     case_insensitive: true
   };
 };
-},{}],38:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords:
@@ -4548,7 +4602,7 @@ module.exports = function(hljs) {
     ]
   }
 };
-},{}],39:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -4642,7 +4696,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],40:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 module.exports = function(hljs) {
   var GO_KEYWORDS = {
     keyword:
@@ -4681,7 +4735,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],41:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 module.exports = // TODO support filter tags like :javascript, support inline HTML
 function(hljs) {
   return {
@@ -4803,7 +4857,7 @@ function(hljs) {
     ]
   };
 };
-},{}],42:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 module.exports = function(hljs) {
   var EXPRESSION_KEYWORDS = 'each in with if else unless bindattr action collection debugger log outlet template unbound view yield';
   return {
@@ -4835,7 +4889,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],43:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 module.exports = function(hljs) {
 
   var COMMENT = {
@@ -4960,7 +5014,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],44:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     illegal: '\\S',
@@ -4994,7 +5048,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],45:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -5024,7 +5078,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],46:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 module.exports = function(hljs) {
   var KEYWORDS =
     'false synchronized int abstract float private char boolean static null if const ' +
@@ -5078,7 +5132,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],47:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     aliases: ['js'],
@@ -5149,7 +5203,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],48:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 module.exports = function(hljs) {
   var LITERALS = {literal: 'true false null'};
   var TYPES = [
@@ -5187,7 +5241,7 @@ module.exports = function(hljs) {
     illegal: '\\S'
   };
 };
-},{}],49:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 module.exports = function(hljs) {
   var LASSO_IDENT_RE = '[a-zA-Z_][a-zA-Z0-9_.]*';
   var LASSO_ANGLE_RE = '<\\?(lasso(script)?|=)';
@@ -5363,7 +5417,7 @@ module.exports = function(hljs) {
     ].concat(LASSO_CODE)
   };
 };
-},{}],50:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 module.exports = function(hljs) {
   var LISP_IDENT_RE = '[a-zA-Z_\\-\\+\\*\\/\\<\\=\\>\\&\\#][a-zA-Z0-9_\\-\\+\\*\\/\\<\\=\\>\\&\\#!]*';
   var LISP_SIMPLE_NUMBER_RE = '(\\-|\\+)?\\d+(\\.\\d+|\\/\\d+)?((d|e|f|l|s)(\\+|\\-)?\\d+)?';
@@ -5439,7 +5493,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],51:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 module.exports = function(hljs) {
   var VARIABLE = {
     className: 'variable', begin: '\\b[gtps][A-Z]+[A-Za-z0-9_\\-]*\\b|\\$_[A-Z]+',
@@ -5608,7 +5662,7 @@ module.exports = function(hljs) {
     illegal: ';$|^\\[|^='
   };
 };
-},{}],52:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 module.exports = function(hljs) {
   var OPENING_LONG_BRACKET = '\\[=*\\[';
   var CLOSING_LONG_BRACKET = '\\]=*\\]';
@@ -5665,7 +5719,7 @@ module.exports = function(hljs) {
     ])
   };
 };
-},{}],53:[function(require,module,exports){
+},{}],56:[function(require,module,exports){
 module.exports = function(hljs) {
   var VARIABLE = {
     className: 'variable',
@@ -5709,7 +5763,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],54:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
@@ -5810,7 +5864,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],55:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     aliases: ['mma'],
@@ -5869,7 +5923,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],56:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 module.exports = function(hljs) {
 
   var COMMON_CONTAINS = [
@@ -5943,7 +5997,7 @@ module.exports = function(hljs) {
     ].concat(COMMON_CONTAINS)
   };
 };
-},{}],57:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords:
@@ -6173,7 +6227,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],58:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: [
@@ -6193,7 +6247,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],59:[function(require,module,exports){
+},{}],62:[function(require,module,exports){
 module.exports = function(hljs) {
   var VAR = {
     className: 'variable',
@@ -6269,7 +6323,7 @@ module.exports = function(hljs) {
     illegal: '[^\\s\\}]'
   };
 };
-},{}],60:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 module.exports = function(hljs) {
   var OBJC_KEYWORDS = {
     keyword:
@@ -6353,7 +6407,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],61:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -6396,7 +6450,7 @@ module.exports = function(hljs) {
     ]
   }
 };
-},{}],62:[function(require,module,exports){
+},{}],65:[function(require,module,exports){
 module.exports = function(hljs) {
   var OXYGENE_KEYWORDS = 'abstract add and array as asc aspect assembly async begin break block by case class concat const copy constructor continue '+
     'create default delegate desc distinct div do downto dynamic each else empty end ensure enum equals event except exit extension external false '+
@@ -6461,7 +6515,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],63:[function(require,module,exports){
+},{}],66:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     subLanguage: 'xml', relevance: 0,
@@ -6506,7 +6560,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],64:[function(require,module,exports){
+},{}],67:[function(require,module,exports){
 module.exports = function(hljs) {
   var PERL_KEYWORDS = 'getpwent getservent quotemeta msgrcv scalar kill dbmclose undef lc ' +
     'ma syswrite tr send umask sysopen shmwrite vec qx utime local oct semctl localtime ' +
@@ -6654,7 +6708,7 @@ module.exports = function(hljs) {
     contains: PERL_DEFAULT_CONTAINS
   };
 };
-},{}],65:[function(require,module,exports){
+},{}],68:[function(require,module,exports){
 module.exports = function(hljs) {
   var VARIABLE = {
     className: 'variable', begin: '\\$+[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*'
@@ -6762,7 +6816,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],66:[function(require,module,exports){
+},{}],69:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
@@ -6804,7 +6858,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],67:[function(require,module,exports){
+},{}],70:[function(require,module,exports){
 module.exports = function(hljs) {
   var PROMPT = {
     className: 'prompt',  begin: /^(>>>|\.\.\.) /
@@ -6887,7 +6941,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],68:[function(require,module,exports){
+},{}],71:[function(require,module,exports){
 module.exports = function(hljs) {
   var IDENT_RE = '([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*';
 
@@ -6957,7 +7011,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],69:[function(require,module,exports){
+},{}],72:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords:
@@ -6984,7 +7038,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],70:[function(require,module,exports){
+},{}],73:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -7021,7 +7075,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],71:[function(require,module,exports){
+},{}],74:[function(require,module,exports){
 module.exports = function(hljs) {
   var RUBY_METHOD_RE = '[a-zA-Z_]\\w*[!?=]?|[-+~]\\@|<<|>>|=~|===?|<=>|[<>]=?|\\*\\*|[-/+%^&*~`|]|\\[\\]=?';
   var RUBY_KEYWORDS =
@@ -7179,7 +7233,7 @@ module.exports = function(hljs) {
     contains: RUBY_DEFAULT_CONTAINS
   };
 };
-},{}],72:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -7236,7 +7290,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],73:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
 module.exports = function(hljs) {
   var NUMBER = {
     className: 'number',
@@ -7280,7 +7334,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],74:[function(require,module,exports){
+},{}],77:[function(require,module,exports){
 module.exports = function(hljs) {
   var ANNOTATION = {
     className: 'annotation', begin: '@[A-Za-z]+'
@@ -7333,7 +7387,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],75:[function(require,module,exports){
+},{}],78:[function(require,module,exports){
 module.exports = function(hljs) {
 
   var COMMON_CONTAINS = [
@@ -7390,7 +7444,7 @@ module.exports = function(hljs) {
     ].concat(COMMON_CONTAINS)
   };
 };
-},{}],76:[function(require,module,exports){
+},{}],79:[function(require,module,exports){
 module.exports = function(hljs) {
   var IDENT_RE = '[a-zA-Z-][a-zA-Z0-9_-]*';
   var FUNCTION = {
@@ -7501,7 +7555,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],77:[function(require,module,exports){
+},{}],80:[function(require,module,exports){
 module.exports = function(hljs) {
   var VAR_IDENT_RE = '[a-z][a-zA-Z0-9_]*';
   var CHAR = {
@@ -7556,7 +7610,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],78:[function(require,module,exports){
+},{}],81:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -7617,7 +7671,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],79:[function(require,module,exports){
+},{}],82:[function(require,module,exports){
 module.exports = function(hljs) {
   var COMMAND1 = {
     className: 'command',
@@ -7670,7 +7724,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],80:[function(require,module,exports){
+},{}],83:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -7725,7 +7779,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],81:[function(require,module,exports){
+},{}],84:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -7775,7 +7829,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],82:[function(require,module,exports){
+},{}],85:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -7811,7 +7865,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],83:[function(require,module,exports){
+},{}],86:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -7854,7 +7908,7 @@ module.exports = function(hljs) {
     ]
   }; // return
 };
-},{}],84:[function(require,module,exports){
+},{}],87:[function(require,module,exports){
 module.exports = function(hljs) {
   var XML_IDENT_RE = '[A-Za-z0-9\\._:-]+';
   var PHP = {
@@ -7958,7 +8012,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],85:[function(require,module,exports){
+},{}],88:[function(require,module,exports){
 //     Underscore.js 1.5.2
 //     http://underscorejs.org
 //     (c) 2009-2013 Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
@@ -9236,4 +9290,4 @@ module.exports = function(hljs) {
 
 }).call(this);
 
-},{}]},{},[1])
+},{}]},{},[2])
