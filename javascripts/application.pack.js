@@ -40,6 +40,10 @@ window.connection.on('leave', function(id) {
   window.members.remove(id)
 })
 
+window.connection.on('join', function(id) {
+  window.members.add({ 'id': id, 'name': id })
+})
+
 var $content    = $('#content')
   , $cursor     = $('#cursor')
   , $powerline  = $('#powerline')
