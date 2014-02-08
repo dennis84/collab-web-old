@@ -233,13 +233,15 @@ body {
   padding: 5px 10px;
   border-radius: 20px;
 }
-.editor .cursor {
+.editor .cursor-container {
   position: absolute;
+  top: 0;
+  left: 0;
+}
+.editor .cursor-container .cursor {
   width: 1ch;
   height: 18px;
   background: #999999;
-  top: 0;
-  left: 0;
   -webkit-animation: blink 0.8s linear 0s infinite;
   -moz-animation: blink 0.8s linear 0s infinite;
   -ms-animation: blink 0.8s linear 0s infinite;

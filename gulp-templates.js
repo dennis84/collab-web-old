@@ -37,4 +37,4 @@ module.exports = function(filename) {
   }
 
   return es.through(bufferContents, endStream)
-};
+}

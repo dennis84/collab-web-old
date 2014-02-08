@@ -9,7 +9,7 @@ module.exports = Backbone.Model.extend({
 
     this.socket.onmessage = function(e) {
       var r = JSON.parse(e.data)
-      model.trigger(r.t, r.d)
+      model.trigger(r.t, r.d, r.s)
     }
 
     this.socket.onopen = function() {

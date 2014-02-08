@@ -143,17 +143,20 @@ html, body {
     }
   }
 
-  .cursor {
+  .cursor-container {
     position: absolute;
-    width: 1ch;
-    height: @editor-font-size;
-    background: @c-base01;
     top: 0;
     left: 0;
-    -webkit-animation: blink 0.8s linear 0s infinite;
-    -moz-animation: blink 0.8s linear 0s infinite;
-    -ms-animation: blink 0.8s linear 0s infinite;
-    -o-animation: blink 0.8s linear 0s infinite;
+
+    .cursor {
+      width: 1ch;
+      height: @editor-font-size;
+      background: @c-base01;
+      -webkit-animation: blink 0.8s linear 0s infinite;
+      -moz-animation: blink 0.8s linear 0s infinite;
+      -ms-animation: blink 0.8s linear 0s infinite;
+      -o-animation: blink 0.8s linear 0s infinite;
+    }
   }
 }
 
