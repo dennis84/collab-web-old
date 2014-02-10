@@ -29,7 +29,7 @@ window.connection.on('members', function(data) {
   window.members.reset(data)
 })
 
-window.connection.on('member', function(data) {
+window.connection.on('update-member', function(data) {
   var member = window.members.get(data.id)
   if(member) {
     member.set("name", data.name)

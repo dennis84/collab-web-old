@@ -29,7 +29,7 @@ module.exports = Backbone.View.extend({
     }
 
     window.connection.socket.send(JSON.stringify({
-      't': 'member',
+      't': 'update-nick',
       'd': username
     }))
 
