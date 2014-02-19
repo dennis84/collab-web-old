@@ -1,0 +1,44 @@
+@import "colors.less";
+
+.navigation {
+  position: fixed;
+  width: 200px;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: @c-base03;
+  text-shadow: 0 1px 0 #000;
+
+  h3 {
+    padding: 15px;
+    margin: 0;
+    font-size: 16px;
+    text-transform: uppercase;
+    color: @c-base00;
+    border-bottom: 1px solid @c-base02;
+    letter-spacing: 2px;
+  }
+
+  .list-group {
+    .list-group-item {
+      border-radius: 0;
+      border: 0;
+      margin: 0;
+      background: none;
+      color: @c-base01;
+
+      &.linked {
+        padding: 0;
+        a {
+          display: block;
+          padding: 10px 15px;
+          color: @c-base01;
+        }
+        &:hover, & a:hover {
+          background: darken(@c-base03, 3%);
+          text-decoration: none;
+        }
+      }
+    }
+  }
+}

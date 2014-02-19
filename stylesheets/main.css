@@ -146,11 +146,16 @@ body {
   background: none;
   color: #999999;
 }
-.navigation .list-group .list-group-item a {
+.navigation .list-group .list-group-item.linked {
+  padding: 0;
+}
+.navigation .list-group .list-group-item.linked a {
+  display: block;
+  padding: 10px 15px;
   color: #999999;
 }
-.navigation .list-group .list-group-item:hover,
-.navigation .list-group .list-group-item a:hover {
+.navigation .list-group .list-group-item.linked:hover,
+.navigation .list-group .list-group-item.linked a:hover {
   background: #262728;
   text-decoration: none;
 }
