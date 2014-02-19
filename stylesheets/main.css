@@ -159,6 +159,11 @@ body {
   background: #262728;
   text-decoration: none;
 }
+@media (max-width: 767px) {
+  .navigation {
+    left: -150px;
+  }
+}
 .editor-wrapper {
   height: 100%;
   padding-bottom: 38px;
@@ -255,9 +260,6 @@ body {
 @media (max-width: 767px) {
   .layout {
     padding-left: 0px;
-  }
-  .navigation {
-    left: -150px;
   }
 }
 @keyframes blink {
