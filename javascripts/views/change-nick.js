@@ -4,15 +4,16 @@ var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
   events: {
-    'click #save-username': 'save'
+    'click #save-nick': 'save'
   },
 
   initialize: function() {
     this.$el.on('hidden.bs.modal', _.bind(this.close, this))
+    this.$el.on('shown.bs.modal', _.bind(this.focus, this))
   },
 
   show: function() {
-    this.$el.html(_.template(templates['username.html'], {}))
+    this.$el.html(_.template(templates['change-nick.html'], {}))
     this.$el.modal('show')
   },
 
@@ -21,16 +22,20 @@ module.exports = Backbone.View.extend({
     this.stopListening()
   },
 
+  focus: function() {
+    this.$('#nick').focus()
+  },
+
   save: function(e) {
     e.preventDefault()
-    var username = this.$('#username').val()
-    if(_.isEmpty(username)) {
+    var nick = this.$('#nick').val()
+    if(_.isEmpty(nick)) {
       this.$el.modal('hide')
     }
 
     window.connection.socket.send(JSON.stringify({
       't': 'update-nick',
-      'd': username
+      'd': nick
     }))
 
     this.$el.modal('hide')

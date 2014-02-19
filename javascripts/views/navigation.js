@@ -7,7 +7,7 @@ var Backbone = require('backbone')
 module.exports = Backbone.View.extend({
   events: {
     'click #follow': 'toggleFollow',
-    'click #change-username': 'changeUsername'
+    'click #change-nick': 'changeNick'
   },
 
   initialize: function() {
@@ -49,8 +49,8 @@ module.exports = Backbone.View.extend({
     }
   },
 
-  changeUsername: function(e) {
+  changeNick: function(e) {
     e.preventDefault()
-    window.username.show()
+    window.nick.show()
   }
 })

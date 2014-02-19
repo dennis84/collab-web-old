@@ -6,7 +6,7 @@ var Backbone = require('backbone')
   , Editor = require('./views/editor')
   , Powerline = require('./views/powerline')
   , Navigation = require('./views/navigation')
-  , Username = require('./views/username')
+  , ChangeNick = require('./views/change-nick')
   , Members = require('./collections/members')
   , Cursors = require('./collections/cursors')
 
@@ -55,7 +55,7 @@ window.code = new Code({ el: $content })
 window.editor = new Editor({ el: $editor })
 window.powerline = new Powerline({ el: $powerline })
 window.navigation = new Navigation({ el: $navigation })
-window.username = new Username({ el: $modal })
+window.nick = new ChangeNick({ el: $modal })
 window.router = new Router
 
 Backbone.history.start()

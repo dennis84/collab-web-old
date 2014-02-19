@@ -23,7 +23,7 @@ var Backbone = require('backbone')
   , Editor = require('./views/editor')
   , Powerline = require('./views/powerline')
   , Navigation = require('./views/navigation')
-  , Username = require('./views/username')
+  , ChangeNick = require('./views/change-nick')
   , Members = require('./collections/members')
   , Cursors = require('./collections/cursors')
 
@@ -72,12 +72,12 @@ window.code = new Code({ el: $content })
 window.editor = new Editor({ el: $editor })
 window.powerline = new Powerline({ el: $powerline })
 window.navigation = new Navigation({ el: $navigation })
-window.username = new Username({ el: $modal })
+window.nick = new ChangeNick({ el: $modal })
 window.router = new Router
 
 Backbone.history.start()
 
-},{"./collections/cursors":1,"./collections/members":2,"./models/connection":4,"./router":7,"./views/code":9,"./views/editor":11,"./views/navigation":14,"./views/powerline":15,"./views/username":16,"backbone":17,"underscore":91}],4:[function(require,module,exports){
+},{"./collections/cursors":1,"./collections/members":2,"./models/connection":4,"./router":7,"./views/change-nick":9,"./views/code":10,"./views/editor":12,"./views/navigation":15,"./views/powerline":16,"backbone":17,"underscore":91}],4:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.Model.extend({
@@ -155,8 +155,53 @@ module.exports = Backbone.Router.extend({
 })
 
 },{"./templates":8,"backbone":17}],8:[function(require,module,exports){
-module.exports = {"cursor.html":"<div class=\"cursor\"></div>\n","member.html":"<li class=\"list-group-item\">\n  {{ name }}\n  {% if(is_coding) { %}\n  <span class=\"glyphicon glyphicon-pencil pull-right\"></span>\n  {% } %}\n</li>\n","username.html":"<div class=\"modal-dialog modal-sm\">\n  <div class=\"modal-content\">\n    <form>\n      <div class=\"modal-body\">\n        <label for=\"username\">Username</label>\n        <input type=\"text\" class=\"form-control input-lg\" id=\"username\">\n      </div>\n\n      <div class=\"modal-footer\">\n        <button type=\"button\" class=\"btn btn-default\" data-dismiss=\"modal\">Close</button>\n        <button type=\"submit\" class=\"btn btn-primary\" id=\"save-username\">Apply</button>\n      </div>\n    </form>\n  </div>\n</div>\n","welcome.md":"     _________________________________________ \n    / Collab - A screen sharing tool for pair \\\n    | programming.                            |\n    |                                         |\n    | Collab is open source software. This    |\n    | work is licensed under the MIT License, |\n    \\ Copyright © Dennis Dietrich.           /\n     ----------------------------------------- \n            \\   ^__^\n             \\  (oo)\\_______\n                (__)\\       )\\/\\\n                    ||----w |\n                    ||     ||\n"}
+module.exports = {"change-nick.html":"<div class=\"modal-dialog modal-sm\">\n  <div class=\"modal-content\">\n    <form>\n      <div class=\"modal-body\">\n        <label for=\"nick\">Nickname</label>\n        <input type=\"text\" class=\"form-control input-lg\" id=\"nick\">\n      </div>\n\n      <div class=\"modal-footer\">\n        <button type=\"button\" class=\"btn btn-default\" data-dismiss=\"modal\">Close</button>\n        <button type=\"submit\" class=\"btn btn-primary\" id=\"save-nick\">Apply</button>\n      </div>\n    </form>\n  </div>\n</div>\n","cursor.html":"<div class=\"cursor\"></div>\n","member.html":"<li class=\"list-group-item\">\n  {{ name }}\n  {% if(is_coding) { %}\n  <span class=\"glyphicon glyphicon-pencil pull-right\"></span>\n  {% } %}\n</li>\n","welcome.md":"     _________________________________________ \n    / Collab - A screen sharing tool for pair \\\n    | programming.                            |\n    |                                         |\n    | Collab is open source software. This    |\n    | work is licensed under the MIT License, |\n    \\ Copyright © Dennis Dietrich.           /\n     ----------------------------------------- \n            \\   ^__^\n             \\  (oo)\\_______\n                (__)\\       )\\/\\\n                    ||----w |\n                    ||     ||\n"}
 },{}],9:[function(require,module,exports){
+var Backbone = require('backbone')
+  , _ = require('underscore')
+  , templates = require('../templates')
+
+module.exports = Backbone.View.extend({
+  events: {
+    'click #save-nick': 'save'
+  },
+
+  initialize: function() {
+    this.$el.on('hidden.bs.modal', _.bind(this.close, this))
+    this.$el.on('shown.bs.modal', _.bind(this.focus, this))
+  },
+
+  show: function() {
+    this.$el.html(_.template(templates['change-nick.html'], {}))
+    this.$el.modal('show')
+  },
+
+  close: function() {
+    this.$el.html('')
+    this.stopListening()
+  },
+
+  focus: function() {
+    this.$('#nick').focus()
+  },
+
+  save: function(e) {
+    e.preventDefault()
+    var nick = this.$('#nick').val()
+    if(_.isEmpty(nick)) {
+      this.$el.modal('hide')
+    }
+
+    window.connection.socket.send(JSON.stringify({
+      't': 'update-nick',
+      'd': nick
+    }))
+
+    this.$el.modal('hide')
+  }
+})
+
+},{"../templates":8,"backbone":17,"underscore":91}],10:[function(require,module,exports){
 var Backbone = require('backbone')
   , hljs = require('highlight.js')
 
@@ -190,7 +235,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"backbone":17,"highlight.js":19}],10:[function(require,module,exports){
+},{"backbone":17,"highlight.js":19}],11:[function(require,module,exports){
 var Backbone = require('backbone')
   , _ = require('underscore')
   , templates = require('../templates')
@@ -244,7 +289,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"../templates":8,"backbone":17,"underscore":91}],11:[function(require,module,exports){
+},{"../templates":8,"backbone":17,"underscore":91}],12:[function(require,module,exports){
 var Backbone = require('backbone')
   , CursorView = require('./cursor')
   , Cursor = require('../models/cursor')
@@ -280,7 +325,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"../models/cursor":5,"./cursor":10,"backbone":17}],12:[function(require,module,exports){
+},{"../models/cursor":5,"./cursor":11,"backbone":17}],13:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
@@ -304,7 +349,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"backbone":17}],13:[function(require,module,exports){
+},{"backbone":17}],14:[function(require,module,exports){
 var Backbone = require('backbone')
   , _ = require('underscore')
   , templates = require('../templates')
@@ -329,7 +374,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"../templates":8,"backbone":17,"underscore":91}],14:[function(require,module,exports){
+},{"../templates":8,"backbone":17,"underscore":91}],15:[function(require,module,exports){
 var Backbone = require('backbone')
   , _ = require('underscore')
   , Follow = require('./follow')
@@ -339,7 +384,7 @@ var Backbone = require('backbone')
 module.exports = Backbone.View.extend({
   events: {
     'click #follow': 'toggleFollow',
-    'click #change-username': 'changeUsername'
+    'click #change-nick': 'changeNick'
   },
 
   initialize: function() {
@@ -381,13 +426,13 @@ module.exports = Backbone.View.extend({
     }
   },
 
-  changeUsername: function(e) {
+  changeNick: function(e) {
     e.preventDefault()
-    window.username.show()
+    window.nick.show()
   }
 })
 
-},{"../templates":8,"./follow":12,"./member":13,"backbone":17,"underscore":91}],15:[function(require,module,exports){
+},{"../templates":8,"./follow":13,"./member":14,"backbone":17,"underscore":91}],16:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
@@ -400,47 +445,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"backbone":17}],16:[function(require,module,exports){
-var Backbone = require('backbone')
-  , _ = require('underscore')
-  , templates = require('../templates')
-
-module.exports = Backbone.View.extend({
-  events: {
-    'click #save-username': 'save'
-  },
-
-  initialize: function() {
-    this.$el.on('hidden.bs.modal', _.bind(this.close, this))
-  },
-
-  show: function() {
-    this.$el.html(_.template(templates['username.html'], {}))
-    this.$el.modal('show')
-  },
-
-  close: function() {
-    this.$el.html('')
-    this.stopListening()
-  },
-
-  save: function(e) {
-    e.preventDefault()
-    var username = this.$('#username').val()
-    if(_.isEmpty(username)) {
-      this.$el.modal('hide')
-    }
-
-    window.connection.socket.send(JSON.stringify({
-      't': 'update-nick',
-      'd': username
-    }))
-
-    this.$el.modal('hide')
-  }
-})
-
-},{"../templates":8,"backbone":17,"underscore":91}],17:[function(require,module,exports){
+},{"backbone":17}],17:[function(require,module,exports){
 //     Backbone.js 1.1.0
 
 //     (c) 2010-2011 Jeremy Ashkenas, DocumentCloud Inc.
