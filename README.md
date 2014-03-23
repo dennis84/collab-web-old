@@ -1,3 +1,5 @@
+![Demo Gif](https://raw.githubusercontent.com/dennis84/collab-web/gh-pages/images/collab.gif)
+
 ## Usage
 
     # install gulp globally
