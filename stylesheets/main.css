@@ -210,7 +210,7 @@ a:hover {
   font-size: 18px;
   line-height: 23px;
   font-family: 'FantasqueSansMono';
-  overflow: hidden;
+  overflow: auto;
 }
 .editor pre,
 .editor pre > code {
@@ -263,6 +263,7 @@ a:hover {
 .editor .content {
   width: 100%;
   background: #fefefe;
+  overflow: visible;
 }
 .editor .powerline {
   position: fixed;
