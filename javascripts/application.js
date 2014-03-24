@@ -9,12 +9,13 @@ var Backbone = require('backbone')
   , ChangeNick = require('./views/change-nick')
   , Members = require('./collections/members')
   , Cursors = require('./collections/cursors')
+  , Page = require('./views/page')
 
 Backbone.$ = jQuery
 _.templateSettings.interpolate = /\{\{(.+?)\}\}/g
 _.templateSettings.evaluate = /\{\%(.+?)\%\}/g
 
-window.lineHeight = 19
+window.lineHeight = 23
 window.members = new Members
 window.cursors = new Cursors
 window.connection = new Connection({
@@ -50,7 +51,9 @@ var $content    = $('#content')
   , $powerline  = $('#powerline')
   , $navigation = $('#navigation')
   , $modal      = $('#modal')
+  , $page       = $('#page')
 
+window.page = new Page({ el: $page })
 window.code = new Code({ el: $content })
 window.editor = new Editor({ el: $editor })
 window.powerline = new Powerline({ el: $powerline })

@@ -8,13 +8,10 @@ module.exports = Backbone.Router.extend({
   },
 
   home: function() {
-    window.connection.trigger('code', {
-      'buffer': templates['welcome.md'],
-      'lang':   'markdown',
-      'path':   'welcome.md'
-    })
-
-    window.connection.trigger('cursor', { 'x': 1, 'y': 1 })
+    window.editor.$el.hide()
+    window.navigation.$el.hide()
+    window.page.$el.show()
+    window.page.render(templates['home.html'])
   },
 
   room: function(id) {
@@ -22,6 +19,9 @@ module.exports = Backbone.Router.extend({
       throw new Error('The room ID must have a min length of 3 chars')
     }
 
+    window.page.$el.hide()
+    window.editor.$el.show()
+    window.navigation.$el.show()
     window.connection.connect(id)
   }
 })

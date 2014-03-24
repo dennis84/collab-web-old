@@ -23,7 +23,6 @@ module.exports = Backbone.View.extend({
   withLineNumbers: function(code) {
     var linesNum = (1 + code.split('\n').length)
       , lines = new Array(linesNum)
-      , lineNumbersWrapper
 
     lines = lines.join('<span></span>')
 

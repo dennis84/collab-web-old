@@ -4,6 +4,7 @@ var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
   tagName: 'li',
+  className: 'list-group-item',
 
   initialize: function() {
     this.listenTo(this.model, 'change', this.render)

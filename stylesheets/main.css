@@ -6,13 +6,14 @@
   font-family: 'FantasqueSansMonoBold';
   src: url('../fonts/FantasqueSansMonoBold.woff') format('woff'), url('../fonts/FantasqueSansMonoBold.ttf') format('truetype');
 }
-/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
-/* Tomorrow Comment */
+@font-face {
+  font-family: 'Titillium';
+  src: url('../fonts/titillium-thin-webfont.woff') format('woff'), url('../fonts/titillium-thin-webfont.ttf') format('truetype');
+}
 .hljs-comment,
 .hljs-title {
-  color: #8e908c;
+  color: #cdd1dd;
 }
-/* Tomorrow Red */
 .hljs-variable,
 .hljs-attribute,
 .hljs-tag,
@@ -25,9 +26,8 @@
 .css .hljs-id,
 .css .hljs-class,
 .css .hljs-pseudo {
-  color: #c82829;
+  color: #ed7e79;
 }
-/* Tomorrow Orange */
 .hljs-number,
 .hljs-preprocessor,
 .hljs-pragma,
@@ -35,27 +35,23 @@
 .hljs-literal,
 .hljs-params,
 .hljs-constant {
-  color: #f5871f;
+  color: #faa486;
 }
-/* Tomorrow Yellow */
 .ruby .hljs-class .hljs-title,
 .css .hljs-rules .hljs-attribute {
-  color: #eab700;
+  color: #d7ff98;
 }
-/* Tomorrow Green */
 .hljs-string,
 .hljs-value,
 .hljs-inheritance,
 .hljs-header,
 .ruby .hljs-symbol,
 .xml .hljs-cdata {
-  color: #718c00;
+  color: #32b95f;
 }
-/* Tomorrow Aqua */
 .css .hljs-hexcolor {
-  color: #3e999f;
+  color: #2fe7be;
 }
-/* Tomorrow Blue */
 .hljs-function,
 .python .hljs-decorator,
 .python .hljs-title,
@@ -64,17 +60,16 @@
 .perl .hljs-sub,
 .javascript .hljs-title,
 .coffeescript .hljs-title {
-  color: #4271ae;
+  color: #7376f0;
 }
-/* Tomorrow Purple */
 .hljs-keyword,
 .javascript .hljs-function {
-  color: #8959a8;
+  color: #948cf1;
 }
 .hljs {
   display: block;
   background: white;
-  color: #4d4d4c;
+  color: #767b9e;
   padding: 0.5em;
 }
 .coffeescript .javascript,
@@ -112,101 +107,142 @@ label {
 }
 html,
 body {
-  background: #fafafa;
+  background: #ffffff;
   overflow: hidden;
   height: 100%;
+  color: #767b9e;
+}
+h1,
+h2,
+h3 {
+  font-family: 'Titillium';
+  color: #3e4457;
+}
+a {
+  color: #948cf1;
+}
+a:hover {
+  color: #2719cb;
 }
 .layout {
   height: 100%;
-  padding-left: 200px;
+  padding-left: 320px;
   left: 0;
 }
 .navigation {
   position: fixed;
-  width: 200px;
+  width: 320px;
   top: 0;
   left: 0;
   bottom: 0;
-  background: #2d2f30;
-  text-shadow: 0 1px 0 #000;
+  font-size: 16px;
+  text-shadow: 0 1px 0 #fff;
+  padding: 20px;
+  background: #fefefe;
+}
+.navigation h1 {
+  font-size: 48px;
+  padding-top: 30px;
+  padding-bottom: 50px;
+  text-align: center;
 }
 .navigation h3 {
-  padding: 15px;
-  margin: 0;
-  font-size: 16px;
-  text-transform: uppercase;
-  color: #aaaaaa;
-  border-bottom: 1px solid #444444;
-  letter-spacing: 2px;
+  font-size: 24px;
 }
 .navigation .list-group .list-group-item {
   border-radius: 0;
   border: 0;
   margin: 0;
   background: none;
-  color: #999999;
+  padding: 10px 0;
 }
-.navigation .list-group .list-group-item.linked {
-  padding: 0;
+.navigation .list-group .list-group-item .label-primary {
+  background: #948cf1;
 }
-.navigation .list-group .list-group-item.linked a {
-  display: block;
-  padding: 10px 15px;
-  color: #999999;
-}
-.navigation .list-group .list-group-item.linked:hover,
-.navigation .list-group .list-group-item.linked a:hover {
-  background: #262728;
-  text-decoration: none;
+.navigation .list-group .list-group-item .glyphicon {
+  color: #948cf1;
 }
 @media (max-width: 767px) {
   .navigation {
-    left: -150px;
+    left: -200px;
   }
+}
+.page {
+  height: 100%;
+}
+.page h1 {
+  font-size: 72px;
+  margin-bottom: 20px;
+}
+.page h2 {
+  font-size: 32px;
+}
+.page .promo {
+  padding-top: 150px;
+  height: 100%;
+  text-align: center;
+}
+.page .lead {
+  font-family: 'Titillium';
+  text-align: center;
+  font-size: 24px;
+  margin-bottom: 40px;
+}
+.page .lead a {
+  color: #7376f0;
+  font-weight: bold;
+}
+.page .btn-primary {
+  border-radius: 30px;
+  background: #948cf1;
+  border: 0;
+  margin-bottom: 100px;
+}
+.page .btn-primary:hover {
+  background: #a9a3f4;
 }
 .editor-wrapper {
   height: 100%;
-  padding-bottom: 38px;
 }
 .editor {
   position: relative;
   height: 100%;
   font-size: 18px;
-  line-height: 19px;
+  line-height: 23px;
   font-family: 'FantasqueSansMono';
-  overflow-y: auto;
+  overflow: hidden;
 }
 .editor pre,
 .editor pre > code {
   margin: 0;
   padding: 0;
-  background: #fafafa;
+  padding-left: 1ch;
   border-radius: 0;
   border: 0;
   word-wrap: normal;
   white-space: pre;
   font-size: 18px;
-  line-height: 19px;
-  text-shadow: 0 1px #fff;
+  line-height: 23px;
   font-family: 'FantasqueSansMono';
-  color: #93a1a1;
   height: 100%;
 }
 .editor pre {
   position: relative;
-  padding-left: 6ch;
+  padding-left: 7ch;
   counter-reset: linenumber;
 }
 .editor pre > code {
   position: relative;
 }
 .editor .line-numbers-rows {
-  background: #eeeeee;
+  border-right: 1px solid #e5e5e5;
   position: absolute;
   pointer-events: none;
+  background: #fefefe;
   top: 0;
   left: -6ch;
   width: 6ch;
+  min-height: 100%;
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
@@ -219,39 +255,46 @@ body {
 }
 .editor .line-numbers-rows > span:before {
   content: counter(linenumber);
-  color: #aaaaaa;
+  color: #cdd1dd;
   display: block;
   padding-right: 1ch;
   text-align: right;
 }
 .editor .content {
   width: 100%;
+  background: #fefefe;
 }
 .editor .powerline {
   position: fixed;
   bottom: 0;
-  background: #eeeeee;
-  height: 38px;
   width: 100%;
-  color: #aaaaaa;
-  margin: 0;
+  height: 32px;
+  padding-left: 8ch;
+  margin-bottom: 15px;
 }
 .editor .powerline .filename {
   display: inline-block;
-  background: #fff;
-  margin: 5px;
+  background: #e5e5e5;
   padding: 5px 10px;
   border-radius: 20px;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+.editor .powerline .filename:hover {
+  opacity: 0.3;
 }
 .editor .cursor-container {
   position: absolute;
   top: 0;
   left: 0;
+  margin-left: 8ch;
 }
 .editor .cursor-container .cursor {
   width: 1ch;
-  height: 18px;
-  background: #999999;
+  height: 23px;
+  background: #767b9e;
   -webkit-animation: blink 0.8s linear 0s infinite;
   -moz-animation: blink 0.8s linear 0s infinite;
   -ms-animation: blink 0.8s linear 0s infinite;
@@ -318,17 +361,17 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #eeeeee;
+  background: #fefefe;
   -webkit-box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.1);
 }
 ::-webkit-scrollbar-thumb {
-  background: #aaaaaa;
+  background: #cdd1dd;
   -webkit-box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.2);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #aaaaaa;
+  background: #cdd1dd;
 }
 ::-webkit-scrollbar-thumb:active {
-  background: #aaaaaa;
+  background: #cdd1dd;
   -webkit-box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.3);
 }

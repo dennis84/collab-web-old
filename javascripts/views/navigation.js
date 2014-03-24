@@ -14,12 +14,7 @@ module.exports = Backbone.View.extend({
     this.listenTo(window.members, 'reset', this.resetMembers)
     this.listenTo(window.members, 'add', this.addMember)
     this.listenTo(window.members, 'remove', this.removeMember)
-    this.listenTo(window.connection, 'opened', this.updateNav)
     this.follow = new Follow
-  },
-
-  updateNav: function() {
-    this.$("#settings").removeClass('hidden')
   },
 
   resetMembers: function(members) {

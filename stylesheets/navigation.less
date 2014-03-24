@@ -2,21 +2,24 @@
 
 .navigation {
   position: fixed;
-  width: 200px;
+  width: 320px;
   top: 0;
   left: 0;
   bottom: 0;
-  background: @c-base03;
-  text-shadow: 0 1px 0 #000;
+  font-size: 16px;
+  text-shadow: 0 1px 0 #fff;
+  padding: 20px;
+  background: @base2;
+
+  h1 {
+    font-size: 48px;
+    padding-top: 30px;
+    padding-bottom: 50px;
+    text-align: center;
+  }
 
   h3 {
-    padding: 15px;
-    margin: 0;
-    font-size: 16px;
-    text-transform: uppercase;
-    color: @c-base00;
-    border-bottom: 1px solid @c-base02;
-    letter-spacing: 2px;
+    font-size: 24px;
   }
 
   .list-group {
@@ -25,19 +28,14 @@
       border: 0;
       margin: 0;
       background: none;
-      color: @c-base01;
+      padding: 10px 0;
 
-      &.linked {
-        padding: 0;
-        a {
-          display: block;
-          padding: 10px 15px;
-          color: @c-base01;
-        }
-        &:hover, & a:hover {
-          background: darken(@c-base03, 3%);
-          text-decoration: none;
-        }
+      .label-primary {
+        background: @violet;
+      }
+
+      .glyphicon {
+        color: @violet;
       }
     }
   }
@@ -45,6 +43,6 @@
 
 @media (max-width: 767px) {
   .navigation {
-    left: -150px;
+    left: -200px;
   }
 }

@@ -1,0 +1,41 @@
+@import "colors.less";
+
+.page {
+  height: 100%;
+
+  h1 {
+    font-size: 72px;
+    margin-bottom: 20px;
+  }
+
+  h2 {
+    font-size: 32px;
+  }
+
+  .promo {
+    padding-top: 150px;
+    height: 100%;
+    text-align: center;
+  }
+
+  .lead {
+    font-family: 'Titillium';
+    text-align: center;
+    font-size: 24px;
+    margin-bottom: 40px;
+    a {
+      color: @blue;
+      font-weight: bold;
+    }
+  }
+
+  .btn-primary {
+    border-radius: 30px;
+    background: @violet;
+    border: 0;
+    margin-bottom: 100px;
+    &:hover {
+      background: lighten(@violet, 5%);
+    }
+  }
+}

@@ -41,7 +41,7 @@ module.exports = Backbone.View.extend({
 
     this.$el.css({
       'top':  (y - 1) * window.lineHeight + 'px',
-      'left': (x - 1 + 6) + 'ch'
+      'left': (x - 1) + 'ch'
     })
   },
 
