@@ -8,8 +8,7 @@ module.exports = Backbone.Router.extend({
   },
 
   home: function() {
-    window.editor.$el.hide()
-    window.navigation.$el.hide()
+    $('#layout').hide()
     window.page.$el.show()
     window.page.render(templates['home.html'])
   },
@@ -20,8 +19,7 @@ module.exports = Backbone.Router.extend({
     }
 
     window.page.$el.hide()
-    window.editor.$el.show()
-    window.navigation.$el.show()
+    $('#layout').show()
     window.connection.connect(id)
   }
 })
