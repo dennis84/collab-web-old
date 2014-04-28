@@ -6,7 +6,7 @@ module.exports = Backbone.Collection.extend({
   model: Cursor
 })
 
-},{"../models/cursor":5,"backbone":18}],2:[function(require,module,exports){
+},{"../models/cursor":5,"backbone":19}],2:[function(require,module,exports){
 var Backbone = require('backbone')
   , Member = require('../models/member')
 
@@ -14,7 +14,7 @@ module.exports = Backbone.Collection.extend({
   model: Member
 })
 
-},{"../models/member":6,"backbone":18}],3:[function(require,module,exports){
+},{"../models/member":6,"backbone":19}],3:[function(require,module,exports){
 var Backbone = require('backbone')
   , _ = require('underscore')
   , Connection = require('./models/connection')
@@ -27,6 +27,7 @@ var Backbone = require('backbone')
   , Members = require('./collections/members')
   , Cursors = require('./collections/cursors')
   , Page = require('./views/page')
+  , Status = require('./views/status')
 
 Backbone.$ = jQuery
 _.templateSettings.interpolate = /\{\{(.+?)\}\}/g
@@ -69,6 +70,7 @@ var $content    = $('#content')
   , $navigation = $('#navigation')
   , $modal      = $('#modal')
   , $page       = $('#page')
+  , $status     = $('#status')
 
 window.page = new Page({ el: $page })
 window.code = new Code({ el: $content })
@@ -76,19 +78,23 @@ window.editor = new Editor({ el: $editor })
 window.powerline = new Powerline({ el: $powerline })
 window.navigation = new Navigation({ el: $navigation })
 window.nick = new ChangeNick({ el: $modal })
+window.status = new Status({ el: $status })
 window.router = new Router
 
 Backbone.history.start()
 
-},{"./collections/cursors":1,"./collections/members":2,"./models/connection":4,"./router":7,"./views/change-nick":9,"./views/code":10,"./views/editor":12,"./views/navigation":15,"./views/page":16,"./views/powerline":17,"backbone":18,"underscore":92}],4:[function(require,module,exports){
+},{"./collections/cursors":1,"./collections/members":2,"./models/connection":4,"./router":7,"./views/change-nick":9,"./views/code":10,"./views/editor":12,"./views/navigation":15,"./views/page":16,"./views/powerline":17,"./views/status":18,"backbone":19,"underscore":93}],4:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.Model.extend({
   socket: null,
 
   connect: function(room) {
-    var model = this
+    this.trigger('open', this)
+
     this.socket = new WebSocket(this.get('url') + '/' + room)
+
+    var model = this
 
     this.socket.onmessage = function(e) {
       var r = JSON.parse(e.data)
@@ -98,10 +104,14 @@ module.exports = Backbone.Model.extend({
     this.socket.onopen = function() {
       model.trigger('opened', model)
     }
+
+    this.socket.onclose = function() {
+      model.trigger('closed', model)
+    }
   }
 })
 
-},{"backbone":18}],5:[function(require,module,exports){
+},{"backbone":19}],5:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.Model.extend({
@@ -118,7 +128,7 @@ module.exports = Backbone.Model.extend({
   }
 })
 
-},{"backbone":18}],6:[function(require,module,exports){
+},{"backbone":19}],6:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.Model.extend({
@@ -128,7 +138,7 @@ module.exports = Backbone.Model.extend({
   }
 })
 
-},{"backbone":18}],7:[function(require,module,exports){
+},{"backbone":19}],7:[function(require,module,exports){
 var Backbone = require('backbone')
   , templates = require('./templates')
 
@@ -139,8 +149,7 @@ module.exports = Backbone.Router.extend({
   },
 
   home: function() {
-    window.editor.$el.hide()
-    window.navigation.$el.hide()
+    $('#layout').hide()
     window.page.$el.show()
     window.page.render(templates['home.html'])
   },
@@ -151,14 +160,13 @@ module.exports = Backbone.Router.extend({
     }
 
     window.page.$el.hide()
-    window.editor.$el.show()
-    window.navigation.$el.show()
+    $('#layout').show()
     window.connection.connect(id)
   }
 })
 
-},{"./templates":8,"backbone":18}],8:[function(require,module,exports){
-module.exports = {"change-nick.html":"<div class=\"modal-dialog modal-sm\">\n  <div class=\"modal-content\">\n    <form>\n      <div class=\"modal-body\">\n        <label for=\"nick\">Nickname</label>\n        <input type=\"text\" class=\"form-control input-lg\" id=\"nick\">\n      </div>\n\n      <div class=\"modal-footer\">\n        <button type=\"button\" class=\"btn btn-default\" data-dismiss=\"modal\">Close</button>\n        <button type=\"submit\" class=\"btn btn-primary\" id=\"save-nick\">Apply</button>\n      </div>\n    </form>\n  </div>\n</div>\n","cursor.html":"<div class=\"cursor\"></div>\n","home.html":"<div class=\"promo container\">\n  <div class=\"row\">\n    <div class=\"col-md-6 col-md-offset-3\">\n      <h1>Collab</h1>\n\n      <p class=\"lead\">\n        Collab is a screen sharing tool that allows you to share source code in\n        real time to the web. \n      </p>\n\n      <button\n        class=\"btn btn-primary btn-lg\"\n        data-toggle=\"modal\"\n        data-target=\"#video\">\n        See how Collab works\n      </button>\n      <br>\n\n      <p>\n        Collab is an open source project, go and check it out at Github.\n      </p>\n\n      <div>\n        <a href=\"https://github.com/dennis84/collab\">Backend</a> |\n        <a href=\"https://github.com/dennis84/vim-collab\">VIM Plugin</a> |\n        <a href=\"https://github.com/dennis84/collab-web\">Web App</a>\n      </div>\n    </div>\n  </div>\n</div>\n\n<div id=\"video\" class=\"modal fade\">\n  <div class=\"modal-dialog modal-lg\">\n    <div class=\"modal-content\" style=\"line-height: 0\">\n      <iframe\n        src=\"//player.vimeo.com/video/89740761\"\n        width=\"900\"\n        height=\"466\"\n        frameborder=\"0\"\n        webkitallowfullscreen\n        mozallowfullscreen\n        allowfullscreen></iframe>\n    </div>\n  </div>\n</div>\n","member.html":"{{ name }}\n{% if(is_coding) { %}\n<span class=\"glyphicon glyphicon-pencil pull-right\"></span>\n{% } %}\n"}
+},{"./templates":8,"backbone":19}],8:[function(require,module,exports){
+module.exports = {"change-nick.html":"<div class=\"modal-dialog modal-sm\">\n  <div class=\"modal-content\">\n    <form>\n      <div class=\"modal-body\">\n        <label for=\"nick\">Nickname</label>\n        <input type=\"text\" class=\"form-control input-lg\" id=\"nick\">\n      </div>\n\n      <div class=\"modal-footer\">\n        <button type=\"button\" class=\"btn btn-default\" data-dismiss=\"modal\">Close</button>\n        <button type=\"submit\" class=\"btn btn-primary\" id=\"save-nick\">Apply</button>\n      </div>\n    </form>\n  </div>\n</div>\n","cursor.html":"<div class=\"cursor\"></div>\n","home.html":"<div class=\"promo container\">\n  <div class=\"row\">\n    <div class=\"col-md-6 col-md-offset-3\">\n      <h1>Collab</h1>\n\n      <p class=\"lead\">\n        Collab is a screen sharing tool that allows you to share source code in\n        real time to the web. \n      </p>\n\n      <button\n        class=\"btn btn-primary btn-lg\"\n        data-toggle=\"modal\"\n        data-target=\"#video\">\n        See how Collab works\n      </button>\n      <br>\n\n      <p>\n        Collab is an open source project, go and check it out at Github.\n      </p>\n\n      <div>\n        <a href=\"https://github.com/dennis84/collab\">Backend</a> |\n        <a href=\"https://github.com/dennis84/vim-collab\">VIM Plugin</a> |\n        <a href=\"https://github.com/dennis84/collab-web\">Web App</a>\n      </div>\n    </div>\n  </div>\n</div>\n\n<div id=\"video\" class=\"modal fade\">\n  <div class=\"modal-dialog modal-lg\">\n    <div class=\"modal-content\" style=\"line-height: 0\">\n      <iframe\n        src=\"//player.vimeo.com/video/89740761\"\n        width=\"900\"\n        height=\"466\"\n        frameborder=\"0\"\n        webkitallowfullscreen\n        mozallowfullscreen\n        allowfullscreen></iframe>\n    </div>\n  </div>\n</div>\n","member.html":"{{ name }}\n{% if(is_coding) { %}\n<span class=\"glyphicon glyphicon-pencil pull-right\"></span>\n{% } %}\n","status-closed.html":"<div class=\"center\">\n  <h3>Connection lost</h3>\n</div>\n","status-open.html":"<div class=\"center\">\n  <h3>Waiting for connection ...</h3>\n</div>\n","status-opened.html":"<div class=\"center\">\n  <h3>Waiting for code ...</h3>\n</div>\n"}
 },{}],9:[function(require,module,exports){
 var Backbone = require('backbone')
   , _ = require('underscore')
@@ -204,7 +212,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"../templates":8,"backbone":18,"underscore":92}],10:[function(require,module,exports){
+},{"../templates":8,"backbone":19,"underscore":93}],10:[function(require,module,exports){
 var Backbone = require('backbone')
   , hljs = require('highlight.js')
 
@@ -237,7 +245,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"backbone":18,"highlight.js":20}],11:[function(require,module,exports){
+},{"backbone":19,"highlight.js":21}],11:[function(require,module,exports){
 var Backbone = require('backbone')
   , _ = require('underscore')
   , templates = require('../templates')
@@ -291,7 +299,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"../templates":8,"backbone":18,"underscore":92}],12:[function(require,module,exports){
+},{"../templates":8,"backbone":19,"underscore":93}],12:[function(require,module,exports){
 var Backbone = require('backbone')
   , CursorView = require('./cursor')
   , Cursor = require('../models/cursor')
@@ -327,7 +335,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"../models/cursor":5,"./cursor":11,"backbone":18}],13:[function(require,module,exports){
+},{"../models/cursor":5,"./cursor":11,"backbone":19}],13:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
@@ -351,7 +359,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"backbone":18}],14:[function(require,module,exports){
+},{"backbone":19}],14:[function(require,module,exports){
 var Backbone = require('backbone')
   , _ = require('underscore')
   , templates = require('../templates')
@@ -377,7 +385,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"../templates":8,"backbone":18,"underscore":92}],15:[function(require,module,exports){
+},{"../templates":8,"backbone":19,"underscore":93}],15:[function(require,module,exports){
 var Backbone = require('backbone')
   , _ = require('underscore')
   , Follow = require('./follow')
@@ -430,7 +438,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"../templates":8,"./follow":13,"./member":14,"backbone":18,"underscore":92}],16:[function(require,module,exports){
+},{"../templates":8,"./follow":13,"./member":14,"backbone":19,"underscore":93}],16:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
@@ -439,7 +447,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"backbone":18}],17:[function(require,module,exports){
+},{"backbone":19}],17:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
@@ -452,7 +460,43 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"backbone":18}],18:[function(require,module,exports){
+},{"backbone":19}],18:[function(require,module,exports){
+var Backbone = require('backbone')
+  , _ = require('underscore')
+  , templates = require('../templates')
+
+module.exports = Backbone.View.extend({
+
+  initialize: function() {
+    this.listenToOnce(window.connection, 'open', this.open)
+    this.listenToOnce(window.connection, 'opened', this.opened)
+    this.listenToOnce(window.connection, 'closed', this.closed)
+    this.listenToOnce(window.connection, 'code', this.hide)
+  },
+
+  show: function(status) {
+    this.$el.html(_.template(templates['status-' + status + '.html'], {}))
+    this.$el.show()
+  },
+
+  hide: function(data) {
+    this.$el.hide()
+  },
+
+  opened: function(conn) {
+    this.show('open')
+  },
+
+  opened: function(conn) {
+    this.show('opened')
+  },
+
+  closed: function(conn) {
+    this.show('closed')
+  }
+})
+
+},{"../templates":8,"backbone":19,"underscore":93}],19:[function(require,module,exports){
 //     Backbone.js 1.1.2
 
 //     (c) 2010-2014 Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors
@@ -2062,7 +2106,7 @@ module.exports = Backbone.View.extend({
 
 }));
 
-},{"underscore":92}],19:[function(require,module,exports){
+},{"underscore":93}],20:[function(require,module,exports){
 var Highlight = function() {
 
   /* Utility functions */
@@ -2741,7 +2785,7 @@ var Highlight = function() {
   };
 };
 module.exports = Highlight;
-},{}],20:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 var Highlight = require('./highlight');
 var hljs = new Highlight();
 hljs.registerLanguage('bash', require('./languages/bash.js'));
@@ -2816,7 +2860,7 @@ hljs.registerLanguage('parser3', require('./languages/parser3.js'));
 hljs.registerLanguage('clojure', require('./languages/clojure.js'));
 hljs.registerLanguage('go', require('./languages/go.js'));
 module.exports = hljs;
-},{"./highlight":19,"./languages/1c.js":21,"./languages/actionscript.js":22,"./languages/apache.js":23,"./languages/applescript.js":24,"./languages/asciidoc.js":25,"./languages/autohotkey.js":26,"./languages/avrasm.js":27,"./languages/axapta.js":28,"./languages/bash.js":29,"./languages/brainfuck.js":30,"./languages/clojure.js":31,"./languages/cmake.js":32,"./languages/coffeescript.js":33,"./languages/cpp.js":34,"./languages/cs.js":35,"./languages/css.js":36,"./languages/d.js":37,"./languages/delphi.js":38,"./languages/diff.js":39,"./languages/django.js":40,"./languages/dos.js":41,"./languages/erlang-repl.js":42,"./languages/erlang.js":43,"./languages/fix.js":44,"./languages/fsharp.js":45,"./languages/glsl.js":46,"./languages/go.js":47,"./languages/haml.js":48,"./languages/handlebars.js":49,"./languages/haskell.js":50,"./languages/http.js":51,"./languages/ini.js":52,"./languages/java.js":53,"./languages/javascript.js":54,"./languages/json.js":55,"./languages/lasso.js":56,"./languages/lisp.js":57,"./languages/livecodeserver.js":58,"./languages/lua.js":59,"./languages/makefile.js":60,"./languages/markdown.js":61,"./languages/mathematica.js":62,"./languages/matlab.js":63,"./languages/mel.js":64,"./languages/mizar.js":65,"./languages/nginx.js":66,"./languages/objectivec.js":67,"./languages/ocaml.js":68,"./languages/oxygene.js":69,"./languages/parser3.js":70,"./languages/perl.js":71,"./languages/php.js":72,"./languages/profile.js":73,"./languages/python.js":74,"./languages/r.js":75,"./languages/rib.js":76,"./languages/rsl.js":77,"./languages/ruby.js":78,"./languages/ruleslanguage.js":79,"./languages/rust.js":80,"./languages/scala.js":81,"./languages/scilab.js":82,"./languages/scss.js":83,"./languages/smalltalk.js":84,"./languages/sql.js":85,"./languages/tex.js":86,"./languages/vala.js":87,"./languages/vbnet.js":88,"./languages/vbscript.js":89,"./languages/vhdl.js":90,"./languages/xml.js":91}],21:[function(require,module,exports){
+},{"./highlight":20,"./languages/1c.js":22,"./languages/actionscript.js":23,"./languages/apache.js":24,"./languages/applescript.js":25,"./languages/asciidoc.js":26,"./languages/autohotkey.js":27,"./languages/avrasm.js":28,"./languages/axapta.js":29,"./languages/bash.js":30,"./languages/brainfuck.js":31,"./languages/clojure.js":32,"./languages/cmake.js":33,"./languages/coffeescript.js":34,"./languages/cpp.js":35,"./languages/cs.js":36,"./languages/css.js":37,"./languages/d.js":38,"./languages/delphi.js":39,"./languages/diff.js":40,"./languages/django.js":41,"./languages/dos.js":42,"./languages/erlang-repl.js":43,"./languages/erlang.js":44,"./languages/fix.js":45,"./languages/fsharp.js":46,"./languages/glsl.js":47,"./languages/go.js":48,"./languages/haml.js":49,"./languages/handlebars.js":50,"./languages/haskell.js":51,"./languages/http.js":52,"./languages/ini.js":53,"./languages/java.js":54,"./languages/javascript.js":55,"./languages/json.js":56,"./languages/lasso.js":57,"./languages/lisp.js":58,"./languages/livecodeserver.js":59,"./languages/lua.js":60,"./languages/makefile.js":61,"./languages/markdown.js":62,"./languages/mathematica.js":63,"./languages/matlab.js":64,"./languages/mel.js":65,"./languages/mizar.js":66,"./languages/nginx.js":67,"./languages/objectivec.js":68,"./languages/ocaml.js":69,"./languages/oxygene.js":70,"./languages/parser3.js":71,"./languages/perl.js":72,"./languages/php.js":73,"./languages/profile.js":74,"./languages/python.js":75,"./languages/r.js":76,"./languages/rib.js":77,"./languages/rsl.js":78,"./languages/ruby.js":79,"./languages/ruleslanguage.js":80,"./languages/rust.js":81,"./languages/scala.js":82,"./languages/scilab.js":83,"./languages/scss.js":84,"./languages/smalltalk.js":85,"./languages/sql.js":86,"./languages/tex.js":87,"./languages/vala.js":88,"./languages/vbnet.js":89,"./languages/vbscript.js":90,"./languages/vhdl.js":91,"./languages/xml.js":92}],22:[function(require,module,exports){
 module.exports = function(hljs){
   var IDENT_RE_RU = '[a-zA-Zа-яА-Я][a-zA-Z0-9_а-яА-Я]*';
   var OneS_KEYWORDS = 'возврат дата для если и или иначе иначеесли исключение конецесли ' +
@@ -2902,7 +2946,7 @@ module.exports = function(hljs){
     ]
   };
 };
-},{}],22:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 module.exports = function(hljs) {
   var IDENT_RE = '[a-zA-Z_$][a-zA-Z0-9_$]*';
   var IDENT_FUNC_RETURN_TYPE_RE = '([*]|[a-zA-Z_$][a-zA-Z0-9_$]*)';
@@ -2975,7 +3019,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],23:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 module.exports = function(hljs) {
   var NUMBER = {className: 'number', begin: '[\\$%]\\d+'};
   return {
@@ -3020,7 +3064,7 @@ module.exports = function(hljs) {
     illegal: /\S/
   };
 };
-},{}],24:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 module.exports = function(hljs) {
   var STRING = hljs.inherit(hljs.QUOTE_STRING_MODE, {illegal: ''});
   var PARAMS = {
@@ -3115,7 +3159,7 @@ module.exports = function(hljs) {
     illegal: '//'
   };
 };
-},{}],25:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
@@ -3308,7 +3352,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],26:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 module.exports = function(hljs) {
   var BACKTICK_ESCAPE = {
     className: 'escape',
@@ -3368,7 +3412,7 @@ module.exports = function(hljs) {
     ])
   }
 };
-},{}],27:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -3424,7 +3468,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],28:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: 'false int abstract private char boolean static null if for true ' +
@@ -3459,7 +3503,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],29:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 module.exports = function(hljs) {
   var VAR = {
     className: 'variable',
@@ -3521,7 +3565,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],30:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 module.exports = function(hljs){
   var LITERAL = {
     className: 'literal',
@@ -3556,7 +3600,7 @@ module.exports = function(hljs){
     ]
   };
 };
-},{}],31:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 module.exports = function(hljs) {
   var keywords = {
     built_in:
@@ -3653,7 +3697,7 @@ module.exports = function(hljs) {
     ]
   }
 };
-},{}],32:[function(require,module,exports){
+},{}],33:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -3691,7 +3735,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],33:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 module.exports = function(hljs) {
   var KEYWORDS = {
     keyword:
@@ -3821,7 +3865,7 @@ module.exports = function(hljs) {
     ])
   };
 };
-},{}],34:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 module.exports = function(hljs) {
   var CPP_KEYWORDS = {
     keyword: 'false int float while private char catch export virtual operator sizeof ' +
@@ -3877,7 +3921,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],35:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 module.exports = function(hljs) {
   var KEYWORDS =
     // Normal keywords.
@@ -3943,7 +3987,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],36:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 module.exports = function(hljs) {
   var IDENT_RE = '[a-zA-Z-][a-zA-Z0-9_-]*';
   var FUNCTION = {
@@ -4045,7 +4089,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],37:[function(require,module,exports){
+},{}],38:[function(require,module,exports){
 module.exports = /**
  * Known issues:
  *
@@ -4304,7 +4348,7 @@ function(hljs) {
 		]
 	};
 };
-},{}],38:[function(require,module,exports){
+},{}],39:[function(require,module,exports){
 module.exports = function(hljs) {
   var KEYWORDS =
     'exports register file shl array record property for mod while set ally label uses raise not ' +
@@ -4363,7 +4407,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],39:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
@@ -4402,7 +4446,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],40:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 module.exports = function(hljs) {
   var FILTER = {
     className: 'filter',
@@ -4457,7 +4501,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],41:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -4488,7 +4532,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],42:[function(require,module,exports){
+},{}],43:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -4539,7 +4583,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],43:[function(require,module,exports){
+},{}],44:[function(require,module,exports){
 module.exports = function(hljs) {
   var BASIC_ATOM_RE = '[a-z\'][a-zA-Z0-9_\']*';
   var FUNCTION_NAME_RE = '(' + BASIC_ATOM_RE + ':' + BASIC_ATOM_RE + '|' + BASIC_ATOM_RE + ')';
@@ -4693,7 +4737,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],44:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
@@ -4722,7 +4766,7 @@ module.exports = function(hljs) {
     case_insensitive: true
   };
 };
-},{}],45:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords:
@@ -4769,7 +4813,7 @@ module.exports = function(hljs) {
     ]
   }
 };
-},{}],46:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -4863,7 +4907,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],47:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 module.exports = function(hljs) {
   var GO_KEYWORDS = {
     keyword:
@@ -4902,7 +4946,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],48:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 module.exports = // TODO support filter tags like :javascript, support inline HTML
 function(hljs) {
   return {
@@ -5024,7 +5068,7 @@ function(hljs) {
     ]
   };
 };
-},{}],49:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 module.exports = function(hljs) {
   var EXPRESSION_KEYWORDS = 'each in with if else unless bindattr action collection debugger log outlet template unbound view yield';
   return {
@@ -5056,7 +5100,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],50:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 module.exports = function(hljs) {
 
   var COMMENT = {
@@ -5181,7 +5225,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],51:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     illegal: '\\S',
@@ -5215,7 +5259,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],52:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -5245,7 +5289,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],53:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 module.exports = function(hljs) {
   var KEYWORDS =
     'false synchronized int abstract float private char boolean static null if const ' +
@@ -5299,7 +5343,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],54:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     aliases: ['js'],
@@ -5370,7 +5414,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],55:[function(require,module,exports){
+},{}],56:[function(require,module,exports){
 module.exports = function(hljs) {
   var LITERALS = {literal: 'true false null'};
   var TYPES = [
@@ -5408,7 +5452,7 @@ module.exports = function(hljs) {
     illegal: '\\S'
   };
 };
-},{}],56:[function(require,module,exports){
+},{}],57:[function(require,module,exports){
 module.exports = function(hljs) {
   var LASSO_IDENT_RE = '[a-zA-Z_][a-zA-Z0-9_.]*';
   var LASSO_ANGLE_RE = '<\\?(lasso(script)?|=)';
@@ -5584,7 +5628,7 @@ module.exports = function(hljs) {
     ].concat(LASSO_CODE)
   };
 };
-},{}],57:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
 module.exports = function(hljs) {
   var LISP_IDENT_RE = '[a-zA-Z_\\-\\+\\*\\/\\<\\=\\>\\&\\#][a-zA-Z0-9_\\-\\+\\*\\/\\<\\=\\>\\&\\#!]*';
   var LISP_SIMPLE_NUMBER_RE = '(\\-|\\+)?\\d+(\\.\\d+|\\/\\d+)?((d|e|f|l|s)(\\+|\\-)?\\d+)?';
@@ -5660,7 +5704,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],58:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 module.exports = function(hljs) {
   var VARIABLE = {
     className: 'variable', begin: '\\b[gtps][A-Z]+[A-Za-z0-9_\\-]*\\b|\\$_[A-Z]+',
@@ -5829,7 +5873,7 @@ module.exports = function(hljs) {
     illegal: ';$|^\\[|^='
   };
 };
-},{}],59:[function(require,module,exports){
+},{}],60:[function(require,module,exports){
 module.exports = function(hljs) {
   var OPENING_LONG_BRACKET = '\\[=*\\[';
   var CLOSING_LONG_BRACKET = '\\]=*\\]';
@@ -5886,7 +5930,7 @@ module.exports = function(hljs) {
     ])
   };
 };
-},{}],60:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 module.exports = function(hljs) {
   var VARIABLE = {
     className: 'variable',
@@ -5930,7 +5974,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],61:[function(require,module,exports){
+},{}],62:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
@@ -6031,7 +6075,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],62:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     aliases: ['mma'],
@@ -6090,7 +6134,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],63:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 module.exports = function(hljs) {
 
   var COMMON_CONTAINS = [
@@ -6164,7 +6208,7 @@ module.exports = function(hljs) {
     ].concat(COMMON_CONTAINS)
   };
 };
-},{}],64:[function(require,module,exports){
+},{}],65:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords:
@@ -6394,7 +6438,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],65:[function(require,module,exports){
+},{}],66:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: [
@@ -6414,7 +6458,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],66:[function(require,module,exports){
+},{}],67:[function(require,module,exports){
 module.exports = function(hljs) {
   var VAR = {
     className: 'variable',
@@ -6490,7 +6534,7 @@ module.exports = function(hljs) {
     illegal: '[^\\s\\}]'
   };
 };
-},{}],67:[function(require,module,exports){
+},{}],68:[function(require,module,exports){
 module.exports = function(hljs) {
   var OBJC_KEYWORDS = {
     keyword:
@@ -6574,7 +6618,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],68:[function(require,module,exports){
+},{}],69:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -6617,7 +6661,7 @@ module.exports = function(hljs) {
     ]
   }
 };
-},{}],69:[function(require,module,exports){
+},{}],70:[function(require,module,exports){
 module.exports = function(hljs) {
   var OXYGENE_KEYWORDS = 'abstract add and array as asc aspect assembly async begin break block by case class concat const copy constructor continue '+
     'create default delegate desc distinct div do downto dynamic each else empty end ensure enum equals event except exit extension external false '+
@@ -6682,7 +6726,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],70:[function(require,module,exports){
+},{}],71:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     subLanguage: 'xml', relevance: 0,
@@ -6727,7 +6771,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],71:[function(require,module,exports){
+},{}],72:[function(require,module,exports){
 module.exports = function(hljs) {
   var PERL_KEYWORDS = 'getpwent getservent quotemeta msgrcv scalar kill dbmclose undef lc ' +
     'ma syswrite tr send umask sysopen shmwrite vec qx utime local oct semctl localtime ' +
@@ -6875,7 +6919,7 @@ module.exports = function(hljs) {
     contains: PERL_DEFAULT_CONTAINS
   };
 };
-},{}],72:[function(require,module,exports){
+},{}],73:[function(require,module,exports){
 module.exports = function(hljs) {
   var VARIABLE = {
     className: 'variable', begin: '\\$+[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*'
@@ -6983,7 +7027,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],73:[function(require,module,exports){
+},{}],74:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     contains: [
@@ -7025,7 +7069,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],74:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 module.exports = function(hljs) {
   var PROMPT = {
     className: 'prompt',  begin: /^(>>>|\.\.\.) /
@@ -7108,7 +7152,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],75:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
 module.exports = function(hljs) {
   var IDENT_RE = '([a-zA-Z]|\\.[a-zA-Z.])[a-zA-Z0-9._]*';
 
@@ -7178,7 +7222,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],76:[function(require,module,exports){
+},{}],77:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords:
@@ -7205,7 +7249,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],77:[function(require,module,exports){
+},{}],78:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -7242,7 +7286,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],78:[function(require,module,exports){
+},{}],79:[function(require,module,exports){
 module.exports = function(hljs) {
   var RUBY_METHOD_RE = '[a-zA-Z_]\\w*[!?=]?|[-+~]\\@|<<|>>|=~|===?|<=>|[<>]=?|\\*\\*|[-/+%^&*~`|]|\\[\\]=?';
   var RUBY_KEYWORDS =
@@ -7400,7 +7444,7 @@ module.exports = function(hljs) {
     contains: RUBY_DEFAULT_CONTAINS
   };
 };
-},{}],79:[function(require,module,exports){
+},{}],80:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -7457,7 +7501,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],80:[function(require,module,exports){
+},{}],81:[function(require,module,exports){
 module.exports = function(hljs) {
   var NUMBER = {
     className: 'number',
@@ -7501,7 +7545,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],81:[function(require,module,exports){
+},{}],82:[function(require,module,exports){
 module.exports = function(hljs) {
   var ANNOTATION = {
     className: 'annotation', begin: '@[A-Za-z]+'
@@ -7554,7 +7598,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],82:[function(require,module,exports){
+},{}],83:[function(require,module,exports){
 module.exports = function(hljs) {
 
   var COMMON_CONTAINS = [
@@ -7611,7 +7655,7 @@ module.exports = function(hljs) {
     ].concat(COMMON_CONTAINS)
   };
 };
-},{}],83:[function(require,module,exports){
+},{}],84:[function(require,module,exports){
 module.exports = function(hljs) {
   var IDENT_RE = '[a-zA-Z-][a-zA-Z0-9_-]*';
   var FUNCTION = {
@@ -7722,7 +7766,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],84:[function(require,module,exports){
+},{}],85:[function(require,module,exports){
 module.exports = function(hljs) {
   var VAR_IDENT_RE = '[a-z][a-zA-Z0-9_]*';
   var CHAR = {
@@ -7777,7 +7821,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],85:[function(require,module,exports){
+},{}],86:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -7838,7 +7882,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],86:[function(require,module,exports){
+},{}],87:[function(require,module,exports){
 module.exports = function(hljs) {
   var COMMAND1 = {
     className: 'command',
@@ -7891,7 +7935,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],87:[function(require,module,exports){
+},{}],88:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     keywords: {
@@ -7946,7 +7990,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],88:[function(require,module,exports){
+},{}],89:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -7996,7 +8040,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],89:[function(require,module,exports){
+},{}],90:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -8032,7 +8076,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],90:[function(require,module,exports){
+},{}],91:[function(require,module,exports){
 module.exports = function(hljs) {
   return {
     case_insensitive: true,
@@ -8075,7 +8119,7 @@ module.exports = function(hljs) {
     ]
   }; // return
 };
-},{}],91:[function(require,module,exports){
+},{}],92:[function(require,module,exports){
 module.exports = function(hljs) {
   var XML_IDENT_RE = '[A-Za-z0-9\\._:-]+';
   var PHP = {
@@ -8179,7 +8223,7 @@ module.exports = function(hljs) {
     ]
   };
 };
-},{}],92:[function(require,module,exports){
+},{}],93:[function(require,module,exports){
 //     Underscore.js 1.6.0
 //     http://underscorejs.org
 //     (c) 2009-2014 Jeremy Ashkenas, DocumentCloud and Investigative Reporters & Editors

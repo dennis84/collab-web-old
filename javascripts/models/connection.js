@@ -4,8 +4,11 @@ module.exports = Backbone.Model.extend({
   socket: null,
 
   connect: function(room) {
-    var model = this
+    this.trigger('open', this)
+
     this.socket = new WebSocket(this.get('url') + '/' + room)
+
+    var model = this
 
     this.socket.onmessage = function(e) {
       var r = JSON.parse(e.data)
@@ -14,6 +17,10 @@ module.exports = Backbone.Model.extend({
 
     this.socket.onopen = function() {
       model.trigger('opened', model)
+    }
+
+    this.socket.onclose = function() {
+      model.trigger('closed', model)
     }
   }
 })

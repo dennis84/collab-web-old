@@ -5,6 +5,15 @@
 
 .editor-wrapper {
   height: 100%;
+  position: relative;
+}
+
+.status {
+  position: absolute;
+  height: 100%;
+  width: 100%;
+  background: @base2;
+  z-index: 1;
 }
 
 .editor {
@@ -45,8 +54,8 @@
     pointer-events: none;
     background: @base2;
     top: 0;
-    left: -6ch;
-    width: 6ch;
+    left: -7ch;
+    width: 7ch;
     min-height: 100%;
     -webkit-user-select: none;
     -moz-user-select: none;

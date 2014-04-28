@@ -10,6 +10,7 @@ var Backbone = require('backbone')
   , Members = require('./collections/members')
   , Cursors = require('./collections/cursors')
   , Page = require('./views/page')
+  , Status = require('./views/status')
 
 Backbone.$ = jQuery
 _.templateSettings.interpolate = /\{\{(.+?)\}\}/g
@@ -52,6 +53,7 @@ var $content    = $('#content')
   , $navigation = $('#navigation')
   , $modal      = $('#modal')
   , $page       = $('#page')
+  , $status     = $('#status')
 
 window.page = new Page({ el: $page })
 window.code = new Code({ el: $content })
@@ -59,6 +61,7 @@ window.editor = new Editor({ el: $editor })
 window.powerline = new Powerline({ el: $powerline })
 window.navigation = new Navigation({ el: $navigation })
 window.nick = new ChangeNick({ el: $modal })
+window.status = new Status({ el: $status })
 window.router = new Router
 
 Backbone.history.start()
