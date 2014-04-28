@@ -38,6 +38,16 @@ a {
   transform: translateX(-50%, -50%);
 }
 
+.btn-primary {
+  border-radius: 30px;
+  background: @violet;
+  border: 0;
+  margin-bottom: 100px;
+  &:hover {
+    background: lighten(@violet, 5%);
+  }
+}
+
 @import "navigation.less";
 @import "page.less";
 @import "editor.less";
