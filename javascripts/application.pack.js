@@ -37,7 +37,7 @@ window.lineHeight = 23
 window.members = new Members
 window.cursors = new Cursors
 window.connection = new Connection({
-  url: 'wss://polar-woodland-4270.herokuapp.com'
+  url: 'ws://localhost:9000'
 })
 
 window.connection.on('opened', function(conn) {
