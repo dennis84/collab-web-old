@@ -35,17 +35,19 @@
     font-size: @editor-font-size;
     line-height: @editor-line-height;
     font-family: 'FantasqueSansMono';
-    height: 100%;
   }
 
   pre {
     position: relative;
     padding-left: 7ch;
     counter-reset: linenumber;
+    height: 100%;
   }
 
   pre > code {
     position: relative;
+    padding-bottom: 50%;
+    min-height: 100%;
   }
 
   .line-numbers-rows {
