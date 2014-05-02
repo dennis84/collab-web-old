@@ -1,5 +1,19 @@
 @import "colors.less";
 
+.center-me {
+  display: -moz-box;
+  -moz-box-pack: center;
+  -moz-box-align: center;
+
+  display: -webkit-box;
+  -webkit-box-pack: center;
+  -webkit-box-align: center;
+
+  display: box;
+  box-pack: center;
+  box-align: center;
+}
+
 .page {
   height: 100%;
 
@@ -13,9 +27,12 @@
   }
 
   .promo {
-    padding-top: 150px;
     height: 100%;
     text-align: center;
+
+    .btn {
+      margin-bottom: 100px;
+    }
   }
 
   .lead {
