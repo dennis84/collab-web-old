@@ -1,14 +1,13 @@
 @import "colors.less";
 
 .center-me {
+  height: 100vh;
   display: -moz-box;
   -moz-box-pack: center;
   -moz-box-align: center;
-
   display: -webkit-box;
   -webkit-box-pack: center;
   -webkit-box-align: center;
-
   display: box;
   box-pack: center;
   box-align: center;
@@ -23,15 +22,21 @@
   }
 
   h2 {
-    font-size: 32px;
+    font-size: 46px;
   }
 
   .promo {
-    height: 100%;
     text-align: center;
-
     .btn {
       margin-bottom: 100px;
+    }
+  }
+
+  .footer {
+    background: #2b2f3e;
+    text-align: center;
+    h1, h2, h3 {
+      color: @base3;
     }
   }
 
