@@ -5,6 +5,7 @@ var Backbone = require('backbone')
 module.exports = Backbone.View.extend({
   initialize: function() {
     this.listenTo(window.connection, 'cursor', this.onCursor)
+    this.listenTo(window.connection, 'code', this.onCode)
   },
 
   onCursor: function(data, sender) {
@@ -30,5 +31,9 @@ module.exports = Backbone.View.extend({
     } else {
       cursor.set(data)
     }
+  },
+
+  onCode: function(data) {
+    this.$('#filename').html(data.path)
   }
 })
