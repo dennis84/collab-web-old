@@ -88,9 +88,7 @@ module.exports = Backbone.Model.extend({
 
   connect: function(room) {
     this.trigger('open', this)
-
     this.socket = new WebSocket(this.get('url') + '/' + room)
-
     var model = this
 
     this.socket.onmessage = function(e) {
@@ -129,7 +127,6 @@ module.exports = Backbone.Model.extend({
 var Backbone = require('backbone')
 
 module.exports = Backbone.Model.extend({
-
   defaults: {
     'is_coding': false
   }
@@ -455,7 +452,6 @@ var Backbone = require('backbone')
   , templates = require('../templates')
 
 module.exports = Backbone.View.extend({
-
   initialize: function() {
     this.listenToOnce(window.connection, 'open', this.open)
     this.listenToOnce(window.connection, 'opened', this.opened)

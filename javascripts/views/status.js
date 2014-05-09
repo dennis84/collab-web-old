@@ -3,7 +3,6 @@ var Backbone = require('backbone')
   , templates = require('../templates')
 
 module.exports = Backbone.View.extend({
-
   initialize: function() {
     this.listenToOnce(window.connection, 'open', this.open)
     this.listenToOnce(window.connection, 'opened', this.opened)
