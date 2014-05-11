@@ -10,6 +10,7 @@ var Backbone = require('backbone')
   , Cursors = require('./collections/cursors')
   , Page = require('./views/page')
   , Status = require('./views/status')
+  , Follow = require('./views/follow')
 
 Backbone.$ = jQuery
 _.templateSettings.interpolate = /\{\{(.+?)\}\}/g
@@ -53,6 +54,7 @@ var $content    = $('#content')
   , $page       = $('#page')
   , $status     = $('#status')
 
+window.follow = new Follow
 window.page = new Page({ el: $page })
 window.code = new Code({ el: $content })
 window.editor = new Editor({ el: $editor })

@@ -27,6 +27,7 @@ var Backbone = require('backbone')
   , Cursors = require('./collections/cursors')
   , Page = require('./views/page')
   , Status = require('./views/status')
+  , Follow = require('./views/follow')
 
 Backbone.$ = jQuery
 _.templateSettings.interpolate = /\{\{(.+?)\}\}/g
@@ -70,6 +71,7 @@ var $content    = $('#content')
   , $page       = $('#page')
   , $status     = $('#status')
 
+window.follow = new Follow
 window.page = new Page({ el: $page })
 window.code = new Code({ el: $content })
 window.editor = new Editor({ el: $editor })
@@ -80,7 +82,7 @@ window.router = new Router
 
 Backbone.history.start()
 
-},{"./collections/cursors":1,"./collections/members":2,"./models/connection":4,"./router":7,"./views/change-nick":9,"./views/code":10,"./views/editor":12,"./views/navigation":15,"./views/page":16,"./views/status":17,"backbone":18,"underscore":92}],4:[function(require,module,exports){
+},{"./collections/cursors":1,"./collections/members":2,"./models/connection":4,"./router":7,"./views/change-nick":9,"./views/code":10,"./views/editor":12,"./views/follow":13,"./views/navigation":15,"./views/page":16,"./views/status":17,"backbone":18,"underscore":92}],4:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.Model.extend({
@@ -388,9 +390,7 @@ module.exports = Backbone.View.extend({
 },{"../templates":8,"backbone":18,"underscore":92}],15:[function(require,module,exports){
 var Backbone = require('backbone')
   , _ = require('underscore')
-  , Follow = require('./follow')
   , Member = require('./member')
-  , templates = require('../templates')
 
 module.exports = Backbone.View.extend({
   events: {
@@ -402,7 +402,6 @@ module.exports = Backbone.View.extend({
     this.listenTo(window.members, 'reset', this.resetMembers)
     this.listenTo(window.members, 'add', this.addMember)
     this.listenTo(window.members, 'remove', this.removeMember)
-    this.follow = new Follow
   },
 
   resetMembers: function(members) {
@@ -426,9 +425,9 @@ module.exports = Backbone.View.extend({
 
   toggleFollow: function(e) {
     if(true === e.currentTarget.checked) {
-      this.follow.start()
+      window.follow.start()
     } else {
-      this.follow.stop()
+      window.follow.stop()
     }
   },
 
@@ -438,7 +437,7 @@ module.exports = Backbone.View.extend({
   }
 })
 
-},{"../templates":8,"./follow":13,"./member":14,"backbone":18,"underscore":92}],16:[function(require,module,exports){
+},{"./member":14,"backbone":18,"underscore":92}],16:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({

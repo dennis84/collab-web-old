@@ -1,8 +1,6 @@
 var Backbone = require('backbone')
   , _ = require('underscore')
-  , Follow = require('./follow')
   , Member = require('./member')
-  , templates = require('../templates')
 
 module.exports = Backbone.View.extend({
   events: {
@@ -14,7 +12,6 @@ module.exports = Backbone.View.extend({
     this.listenTo(window.members, 'reset', this.resetMembers)
     this.listenTo(window.members, 'add', this.addMember)
     this.listenTo(window.members, 'remove', this.removeMember)
-    this.follow = new Follow
   },
 
   resetMembers: function(members) {
@@ -38,9 +35,9 @@ module.exports = Backbone.View.extend({
 
   toggleFollow: function(e) {
     if(true === e.currentTarget.checked) {
-      this.follow.start()
+      window.follow.start()
     } else {
-      this.follow.stop()
+      window.follow.stop()
     }
   },
 
