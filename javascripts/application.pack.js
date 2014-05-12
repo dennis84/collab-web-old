@@ -159,6 +159,7 @@ module.exports = Backbone.Router.extend({
     window.page.$el.hide()
     $('#layout').show()
     window.connection.connect(id)
+    document.title = id
   }
 })
 
