@@ -2,7 +2,6 @@ var Backbone = require('backbone')
   , _ = require('underscore')
   , Connection = require('./models/connection')
   , Router = require('./router')
-  , Code = require('./views/code')
   , Editor = require('./views/editor')
   , Navigation = require('./views/navigation')
   , ChangeNick = require('./views/change-nick')
@@ -10,15 +9,17 @@ var Backbone = require('backbone')
   , Cursors = require('./collections/cursors')
   , Page = require('./views/page')
   , Status = require('./views/status')
-  , Follow = require('./views/follow')
+  , Panes = require('./collections/panes')
 
 Backbone.$ = jQuery
 _.templateSettings.interpolate = /\{\{(.+?)\}\}/g
 _.templateSettings.evaluate = /\{\%(.+?)\%\}/g
 
+window.follow = false
 window.lineHeight = 23
 window.members = new Members
 window.cursors = new Cursors
+window.panes = new Panes
 window.connection = new Connection({
   url: 'wss://polar-woodland-4270.herokuapp.com'
 })
@@ -47,6 +48,15 @@ window.connection.on('join', function(id) {
   window.members.add({ 'id': id, 'name': id })
 })
 
+window.connection.on('code', function(data) {
+  window.panes.update(data)
+})
+
+window.connection.on('cursor', function(data, sender) {
+  var member = window.members.get(sender)
+  window.cursors.update(data, member)
+})
+
 var $content    = $('#content')
   , $editor     = $('#editor')
   , $navigation = $('#navigation')
@@ -54,11 +64,11 @@ var $content    = $('#content')
   , $page       = $('#page')
   , $status     = $('#status')
 
-window.follow = new Follow
+//window.follow = new Follow
 window.page = new Page({ el: $page })
-window.code = new Code({ el: $content })
 window.editor = new Editor({ el: $editor })
 window.navigation = new Navigation({ el: $navigation })
+window.navigation.$('#follow').click()
 window.nick = new ChangeNick({ el: $modal })
 window.status = new Status({ el: $status })
 window.router = new Router

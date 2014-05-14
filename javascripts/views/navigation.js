@@ -35,9 +35,9 @@ module.exports = Backbone.View.extend({
 
   toggleFollow: function(e) {
     if(true === e.currentTarget.checked) {
-      window.follow.start()
+      window.follow = true
     } else {
-      window.follow.stop()
+      window.follow = false
     }
   },
 

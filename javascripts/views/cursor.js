@@ -12,12 +12,10 @@ module.exports = Backbone.View.extend({
   },
 
   render: function() {
-    this.move()
-    this.$el.html(_.template(templates['cursor.html'], this.model.toJSON()))
+    this.$el.html(_.template(templates['cursor.html'], {}))
     this.$el.tooltip('destroy')
-
     var view = this
-    // Fixes tooltip position
+
     setTimeout(function() {
       view.$el.tooltip({
         'placement': 'top',
@@ -26,16 +24,15 @@ module.exports = Backbone.View.extend({
       })
 
       view.$el.tooltip('show')
-
       setTimeout(function() {
         view.$el.tooltip('hide')
       }, 3000)
-    }, 200)
+    }, 200) 
 
     return this
   },
 
-  move: function() {
+  move: function(cursor) {
     var x = this.model.get('x')
       , y = this.model.get('y')
 
@@ -43,10 +40,5 @@ module.exports = Backbone.View.extend({
       'top':  (y - 1) * window.lineHeight + 'px',
       'left': (x - 1) + 'ch'
     })
-  },
-
-  remove: function(cursor) {
-    this.$el.tooltip('destroy')
-    this.$el.remove()
   }
 })
