@@ -34,8 +34,13 @@ window.connection.on('members', function(data) {
 
 window.connection.on('update-member', function(data) {
   var member = window.members.get(data.id)
+  var cursor = window.cursors.get(data.id)
   if(member) {
-    member.set("name", data.name)
+    member.set('name', data.name)
+  }
+
+  if(cursor) {
+    cursor.set('name', data.name)
   }
 })
 
