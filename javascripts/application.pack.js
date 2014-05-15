@@ -122,7 +122,6 @@ var $content    = $('#content')
   , $page       = $('#page')
   , $status     = $('#status')
 
-//window.follow = new Follow
 window.page = new Page({ el: $page })
 window.editor = new Editor({ el: $editor })
 window.navigation = new Navigation({ el: $navigation })
