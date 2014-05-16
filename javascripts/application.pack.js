@@ -25,24 +25,16 @@ module.exports = Backbone.Collection.extend({
 
 },{"../models/cursor":6,"backbone":19,"underscore":93}],2:[function(require,module,exports){
 var Backbone = require('backbone')
-  , Member = require('../models/member')
-
-module.exports = Backbone.Collection.extend({
-  model: Member
-})
-
-},{"../models/member":7,"backbone":19}],3:[function(require,module,exports){
-var Backbone = require('backbone')
   , _ = require('underscore')
-  , Pane = require('../models/pane')
+  , File = require('../models/file')
 
 module.exports = Backbone.Collection.extend({
-  model: Pane,
+  model: File,
 
   update: function(data) {
     var model = this.findWhere({ 'path': data.path })
     if(_.isUndefined(model)) {
-      this.add(new Pane(data))
+      this.add(new File(data))
     } else {
       model.set(data, { 'silent': true })
       model.trigger('change', model)
@@ -50,7 +42,15 @@ module.exports = Backbone.Collection.extend({
   }
 })
 
-},{"../models/pane":8,"backbone":19,"underscore":93}],4:[function(require,module,exports){
+},{"../models/file":7,"backbone":19,"underscore":93}],3:[function(require,module,exports){
+var Backbone = require('backbone')
+  , Member = require('../models/member')
+
+module.exports = Backbone.Collection.extend({
+  model: Member
+})
+
+},{"../models/member":8,"backbone":19}],4:[function(require,module,exports){
 var Backbone = require('backbone')
   , _ = require('underscore')
   , Connection = require('./models/connection')
@@ -62,7 +62,7 @@ var Backbone = require('backbone')
   , Cursors = require('./collections/cursors')
   , Page = require('./views/page')
   , Status = require('./views/status')
-  , Panes = require('./collections/panes')
+  , Files = require('./collections/files')
 
 Backbone.$ = jQuery
 _.templateSettings.interpolate = /\{\{(.+?)\}\}/g
@@ -72,7 +72,7 @@ window.follow = false
 window.lineHeight = 23
 window.members = new Members
 window.cursors = new Cursors
-window.panes = new Panes
+window.files = new Files
 window.connection = new Connection({
   url: 'wss://polar-woodland-4270.herokuapp.com'
 })
@@ -107,7 +107,7 @@ window.connection.on('join', function(id) {
 })
 
 window.connection.on('code', function(data) {
-  window.panes.update(data)
+  window.files.update(data)
 })
 
 window.connection.on('cursor', function(data, sender) {
@@ -132,7 +132,7 @@ window.router = new Router
 
 Backbone.history.start()
 
-},{"./collections/cursors":1,"./collections/members":2,"./collections/panes":3,"./models/connection":5,"./router":9,"./views/change-nick":11,"./views/editor":13,"./views/navigation":15,"./views/page":16,"./views/status":18,"backbone":19,"underscore":93}],5:[function(require,module,exports){
+},{"./collections/cursors":1,"./collections/files":2,"./collections/members":3,"./models/connection":5,"./router":9,"./views/change-nick":11,"./views/editor":13,"./views/navigation":15,"./views/page":16,"./views/status":18,"backbone":19,"underscore":93}],5:[function(require,module,exports){
 var Backbone = require('backbone')
 
 module.exports = Backbone.Model.extend({
@@ -165,16 +165,6 @@ module.exports = Backbone.Model.extend()
 
 },{"backbone":19}],7:[function(require,module,exports){
 var Backbone = require('backbone')
-
-module.exports = Backbone.Model.extend({
-  defaults: {
-    'is_coding': false,
-    'me': false
-  }
-})
-
-},{"backbone":19}],8:[function(require,module,exports){
-var Backbone = require('backbone')
   , Cursor = require('../models/cursor')
 
 var Cursors = Backbone.Collection.extend({
@@ -189,7 +179,17 @@ module.exports = Backbone.Model.extend({
   }
 })
 
-},{"../models/cursor":6,"backbone":19}],9:[function(require,module,exports){
+},{"../models/cursor":6,"backbone":19}],8:[function(require,module,exports){
+var Backbone = require('backbone')
+
+module.exports = Backbone.Model.extend({
+  defaults: {
+    'is_coding': false,
+    'me': false
+  }
+})
+
+},{"backbone":19}],9:[function(require,module,exports){
 var Backbone = require('backbone')
   , templates = require('./templates')
 
@@ -316,19 +316,19 @@ var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
   initialize: function() {
-    this.listenTo(window.panes, 'add', this.addPane)
+    this.listenTo(window.files, 'add', this.addPane)
     this.listenTo(window.cursors, 'add change:file', this.addCursor)
   },
 
-  addPane: function(pane) {
-    var view = new Pane({ 'model': pane })
+  addPane: function(file) {
+    var view = new Pane({ 'model': file })
     this.$el.prepend(view.render().el)
   },
 
   addCursor: function(cursor) {
-    var pane = window.panes.findWhere({ 'path': cursor.get('file') })
-    if(pane) {
-      pane.cursors.add(cursor)
+    var file = window.files.findWhere({ 'path': cursor.get('file') })
+    if(file) {
+      file.cursors.add(cursor)
     }
   }
 })

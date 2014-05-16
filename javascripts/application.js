@@ -9,7 +9,7 @@ var Backbone = require('backbone')
   , Cursors = require('./collections/cursors')
   , Page = require('./views/page')
   , Status = require('./views/status')
-  , Panes = require('./collections/panes')
+  , Files = require('./collections/files')
 
 Backbone.$ = jQuery
 _.templateSettings.interpolate = /\{\{(.+?)\}\}/g
@@ -19,7 +19,7 @@ window.follow = false
 window.lineHeight = 23
 window.members = new Members
 window.cursors = new Cursors
-window.panes = new Panes
+window.files = new Files
 window.connection = new Connection({
   url: 'wss://polar-woodland-4270.herokuapp.com'
 })
@@ -54,7 +54,7 @@ window.connection.on('join', function(id) {
 })
 
 window.connection.on('code', function(data) {
-  window.panes.update(data)
+  window.files.update(data)
 })
 
 window.connection.on('cursor', function(data, sender) {

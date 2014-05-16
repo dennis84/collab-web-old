@@ -3,19 +3,19 @@ var Backbone = require('backbone')
 
 module.exports = Backbone.View.extend({
   initialize: function() {
-    this.listenTo(window.panes, 'add', this.addPane)
+    this.listenTo(window.files, 'add', this.addPane)
     this.listenTo(window.cursors, 'add change:file', this.addCursor)
   },
 
-  addPane: function(pane) {
-    var view = new Pane({ 'model': pane })
+  addPane: function(file) {
+    var view = new Pane({ 'model': file })
     this.$el.prepend(view.render().el)
   },
 
   addCursor: function(cursor) {
-    var pane = window.panes.findWhere({ 'path': cursor.get('file') })
-    if(pane) {
-      pane.cursors.add(cursor)
+    var file = window.files.findWhere({ 'path': cursor.get('file') })
+    if(file) {
+      file.cursors.add(cursor)
     }
   }
 })
