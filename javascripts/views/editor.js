@@ -13,7 +13,7 @@ module.exports = Backbone.View.extend({
   },
 
   addCursor: function(cursor) {
-    var file = window.files.findWhere({ 'path': cursor.get('file') })
+    var file = cursor.get('file')
     if(file) {
       file.cursors.add(cursor)
     }

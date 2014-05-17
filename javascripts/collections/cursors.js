@@ -7,6 +7,7 @@ module.exports = Backbone.Collection.extend({
 
   update: function(data, member) {
     var model = this.get(member.id)
+    var file = window.files.get(data.path)
 
     if(_.isUndefined(model)) {
       this.add(new Cursor({
@@ -17,7 +18,7 @@ module.exports = Backbone.Collection.extend({
         'y': data.y
       }))
     } else {
-      model.set({ 'x': data.x, 'y': data.y, 'file': data.path })
+      model.set({ 'x': data.x, 'y': data.y, 'file': file })
     }
   }
 })

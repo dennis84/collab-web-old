@@ -54,7 +54,7 @@ module.exports = Backbone.View.extend({
   },
 
   scrollTo: function(cursor) {
-    if(this.model.get('path') !== cursor.get('file')) {
+    if(this.model.id !== cursor.get('file').id) {
       this.model.cursors.remove(cursor, { 'silent': true })
       return
     }

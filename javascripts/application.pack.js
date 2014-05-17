@@ -8,6 +8,7 @@ module.exports = Backbone.Collection.extend({
 
   update: function(data, member) {
     var model = this.get(member.id)
+    var file = window.files.get(data.path)
 
     if(_.isUndefined(model)) {
       this.add(new Cursor({
@@ -18,7 +19,7 @@ module.exports = Backbone.Collection.extend({
         'y': data.y
       }))
     } else {
-      model.set({ 'x': data.x, 'y': data.y, 'file': data.path })
+      model.set({ 'x': data.x, 'y': data.y, 'file': file })
     }
   }
 })
@@ -32,9 +33,15 @@ module.exports = Backbone.Collection.extend({
   model: File,
 
   update: function(data) {
-    var model = this.findWhere({ 'path': data.path })
+    var model = this.get(data.path)
+
     if(_.isUndefined(model)) {
-      this.add(new File(data))
+      this.add(new File({
+        'id': data.path,
+        'buffer': data.buffer,
+        'lang': data.lang,
+        'path': data.path
+      }))
     } else {
       model.set(data, { 'silent': true })
       model.trigger('change', model)
@@ -326,7 +333,7 @@ module.exports = Backbone.View.extend({
   },
 
   addCursor: function(cursor) {
-    var file = window.files.findWhere({ 'path': cursor.get('file') })
+    var file = cursor.get('file')
     if(file) {
       file.cursors.add(cursor)
     }
@@ -487,7 +494,7 @@ module.exports = Backbone.View.extend({
   },
 
   scrollTo: function(cursor) {
-    if(this.model.get('path') !== cursor.get('file')) {
+    if(this.model.id !== cursor.get('file').id) {
       this.model.cursors.remove(cursor, { 'silent': true })
       return
     }
